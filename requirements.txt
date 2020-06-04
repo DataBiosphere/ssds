@@ -2,3 +2,4 @@ boto3
 google-crc32c
 google-cloud-storage >= 1.26.0
 gs-chunked-io >= 0.2.12
+cli-builder

@@ -1,32 +1,13 @@
 #!/usr/bin/env python
 import os
 import sys
-import warnings
-import argparse
 
 pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noqa
 sys.path.insert(0, pkg_root)  # noqa
 
-import ssds
+import ssds.cli.staging
+from ssds.cli import dispatch
 
 
-# Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
-warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
-
-
-parser = argparse.ArgumentParser()
-subparsers = parser.add_subparsers()
-
-upload = subparsers.add_parser("upload")
-upload.add_argument("--submission-id", type=str, required=True, help="Submission ID")
-upload.add_argument("--human-readable-name", type=str, required=True, help="Name of submission. Cannot contains spaces.")
-upload.add_argument("filepath", help="Root directory of the submission.")
-upload.set_defaults(func=ssds.upload)
-
-args = parser.parse_args(sys.argv[1:])
-if hasattr(args, "func"):
-    if args.func == ssds.upload:
-        root = os.path.abspath(os.path.normpath(args.filepath))
-        ssds.upload(root, args.submission_id, args.human_readable_name)
-else:
-    parser.print_usage()
+if __name__ == "__main__":
+    dispatch(sys.argv[1:])
