@@ -64,7 +64,7 @@ def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int):
 
 def _copy_parts(mpu: str, bucket: str, key: str, fileobj: typing.BinaryIO, part_size: int):
     part_number = 0
-    parts = list()
+    parts = []
     crc32c = checksum.crc32c(b"")
     while True:
         data = fileobj.read(part_size)
@@ -83,3 +83,7 @@ def _copy_parts(mpu: str, bucket: str, key: str, fileobj: typing.BinaryIO, part_
         assert computed_etag == resp['ETag'].replace('"', '')
         parts.append(dict(ETag=resp['ETag'], PartNumber=part_number))
     return dict(gs_crc32c=crc32c.google_storage_crc32c(), parts=parts)
+
+def list(bucket: str):
+    for item in aws.resource("s3").Bucket(bucket).objects.all():
+        yield item.key
