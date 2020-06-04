@@ -44,8 +44,10 @@ class TestSSDS(unittest.TestCase):
                     fh.write(os.urandom(200))
             with open(os.path.join(root, "large.dat"), "wb") as fh:
                 fh.write(os.urandom(1024 ** 2 * 80))
-            ssds.upload(root, f"s3://{config.aws_staging_bucket}", f"{uuid4()}", "this_is_a_test_submission")
-            ssds.upload(root, f"gs://{config.gcp_staging_bucket}", f"{uuid4()}", "this_is_a_test_submission")
+            ssds.config.platform = ssds.config.Platform.AWS
+            ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
+            ssds.config.platform = ssds.config.Platform.GCP
+            ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
 
 
 class TestSSDSChecksum(unittest.TestCase):
@@ -67,7 +69,7 @@ class TestSSDSChecksum(unittest.TestCase):
 
     def test_blob_crc32c(self):
         data = os.urandom(200)
-        blob = storage.Client().bucket(config.gcp_staging_bucket).blob("test")
+        blob = storage.Client().bucket(config._gcp_staging_bucket).blob("test")
         with io.BytesIO(data) as fh:
             blob.upload_from_file(fh)
         blob.reload()
@@ -76,7 +78,7 @@ class TestSSDSChecksum(unittest.TestCase):
 
     def test_blob_md5(self):
         data = os.urandom(200)
-        blob = aws.resource("s3").Bucket(config.aws_staging_bucket).Object("test")
+        blob = aws.resource("s3").Bucket(config._aws_staging_bucket).Object("test")
         with io.BytesIO(data) as fh:
             blob.upload_fileobj(fh)
         cs = checksum.md5(data).hexdigest()
