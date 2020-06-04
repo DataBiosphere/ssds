@@ -1,5 +1,6 @@
 import io
 import os
+import warnings
 from functools import lru_cache
 
 import gs_chunked_io as gscio
@@ -7,6 +8,9 @@ from google.cloud.storage import Client
 
 from ssds import checksum, config
 from ssds.s3 import get_s3_multipart_chunk_size
+
+# Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
+warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
 
 @lru_cache()
 def client():
@@ -37,7 +41,7 @@ def _upload_oneshot(filepath: str, bucket: str, key: str):
 
 def _upload_multipart(filepath: str, bucket_name: str, key: str, part_size: int):
     _crc32c = checksum.crc32c(b"")
-    _s3_etags = list()
+    _s3_etags = []
 
     def _put_part(part_number: int, part_name: str, data: bytes):
         _crc32c.update(bytes(data))
@@ -57,3 +61,7 @@ def _upload_multipart(filepath: str, bucket_name: str, key: str, part_size: int)
     gs_crc32c = _crc32c.google_storage_crc32c()
     assert gs_crc32c == bucket.get_blob(key).crc32c
     return s3_etag, gs_crc32c
+
+def list(bucket_name: str):
+    for blob in client().bucket(bucket_name).list_blobs():
+        yield blob.name
