@@ -6,7 +6,8 @@ from functools import lru_cache
 import gs_chunked_io as gscio
 from google.cloud.storage import Client
 
-from ssds import checksum, config
+from ssds import checksum
+from ssds.config import Config
 from ssds.s3 import get_s3_multipart_chunk_size
 
 # Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
@@ -14,7 +15,7 @@ warnings.filterwarnings("ignore", "Your application has authenticated using end 
 
 @lru_cache()
 def client():
-    return Client(project=config.gcp_project)
+    return Client(project=Config.gcp_project)
 
 def upload_object(filepath: str, bucket: str, key: str):
     size = os.stat(filepath).st_size

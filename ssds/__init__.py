@@ -1,6 +1,7 @@
 import os
 
-from ssds import s3, gs, config
+from ssds import s3, gs
+from ssds.config import Config, Platform
 
 def upload(src: str, submission_id: str, description: str):
     _upload_local_tree(src, submission_id, description)
@@ -12,14 +13,14 @@ def _upload_local_tree(root: str, submission_id: str, description: str):
     filepaths = [p for p in _list_tree(root)]
     dst_prefix = f"{submission_id}/{description}"
     dst_keys = [f"{dst_prefix}/{os.path.relpath(p, root)}" for p in filepaths]
-    if config.Platform.AWS == config.platform:
+    if Platform.AWS == Config.platform:
         for filepath, dst_key in zip(filepaths, dst_keys):
-            s3.upload_object(filepath, config.staging_bucket, dst_key)
-    elif config.Platform.GCP == config.platform:
+            s3.upload_object(filepath, Config.staging_bucket, dst_key)
+    elif Platform.GCP == Config.platform:
         for filepath, dst_key in zip(filepaths, dst_keys):
-            gs.upload_object(filepath, config.staging_bucket, dst_key)
+            gs.upload_object(filepath, Config.staging_bucket, dst_key)
     else:
-        raise ValueError(f"Unsupported platform: {config.platform}")
+        raise ValueError(f"Unsupported platform: {Config.platform}")
 
 def _list_tree(root):
     for (dirpath, dirnames, filenames) in os.walk(root):

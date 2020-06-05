@@ -14,11 +14,19 @@ pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noq
 sys.path.insert(0, pkg_root)  # noqa
 
 import ssds
-from ssds import config, checksum, aws, s3
+from ssds import checksum, aws, s3
+from ssds.config import Config, Platform
 from tests import infra
 
 
-class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
+_s3_staging_bucket = infra.get_env("SSDS_S3_STAGING_TEST_BUCKET")
+_gs_staging_bucket = infra.get_env("SSDS_GS_STAGING_TEST_BUCKET")
+_s3_release_bucket = infra.get_env("SSDS_S3_RELEASE_TEST_BUCKET")
+_gs_release_bucket = infra.get_env("SSDS_GS_RELEASE_TEST_BUCKET")
+Config.gcp_project = infra.get_env("GOOGLE_CLOUD_PROJECT")
+
+
+class TestSSDS(unittest.TestCase, infra.SuppressWarningsMixin):
     def test_upload(self):
         with tempfile.TemporaryDirectory() as dirname:
             root = os.path.join(dirname, "test_submission")
@@ -40,9 +48,9 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                     fh.write(os.urandom(200))
             with open(os.path.join(root, "large.dat"), "wb") as fh:
                 fh.write(os.urandom(1024 ** 2 * 80))
-            ssds.config.platform = ssds.config.Platform.AWS
+            Config.set(Platform.AWS, _s3_staging_bucket, _s3_release_bucket)
             ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
-            ssds.config.platform = ssds.config.Platform.GCP
+            Config.set(Platform.GCP, _gs_staging_bucket, _gs_release_bucket)
             ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
 
 
@@ -61,7 +69,7 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_blob_crc32c(self):
         data = os.urandom(200)
-        blob = storage.Client().bucket(config._gcp_staging_bucket).blob("test")
+        blob = storage.Client().bucket(_gs_staging_bucket).blob("test")
         with io.BytesIO(data) as fh:
             blob.upload_from_file(fh)
         blob.reload()
@@ -70,7 +78,7 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_blob_md5(self):
         data = os.urandom(200)
-        blob = aws.resource("s3").Bucket(config._aws_staging_bucket).Object("test")
+        blob = aws.resource("s3").Bucket(_s3_staging_bucket).Object("test")
         with io.BytesIO(data) as fh:
             blob.upload_fileobj(fh)
         cs = checksum.md5(data).hexdigest()
