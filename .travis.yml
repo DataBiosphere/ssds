@@ -1,0 +1,20 @@
+language: python
+python:
+  - 3.8
+install:
+  - pip install -r requirements-dev.txt
+  - aws secretsmanager get-secret-value --secret-id hpp/ssds/gcp-service-account-test | jq -r .SecretString > gcp-creds.json
+  - export GOOGLE_APPLICATION_CREDENTIALS="$(pwd -P)/gcp-creds.json"
+script:
+  - set -eo pipefail
+  - make test
+after_success:
+  - bash <(curl -s https://codecov.io/bash)
+env:
+  global:
+    - SSDS_S3_STAGING_TEST_BUCKET="org-hpp-ssds-staging-test"
+    - SSDS_GS_STAGING_TEST_BUCKET="org-hpp-ssds-staging-test"
+    - SSDS_S3_RELEASE_TEST_BUCKET="org-hpp-ssds-release-test"
+    - SSDS_GS_RELEASE_TEST_BUCKET="org-hpp-ssds-release-test"
+    - GOOGLE_CLOUD_PROJECT="platform-dev-178517"
+    - AWS_DEFAULT_REGION="us-west-2"

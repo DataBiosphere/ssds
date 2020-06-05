@@ -48,10 +48,12 @@ class TestSSDS(unittest.TestCase, infra.SuppressWarningsMixin):
                     fh.write(os.urandom(200))
             with open(os.path.join(root, "large.dat"), "wb") as fh:
                 fh.write(os.urandom(1024 ** 2 * 80))
-            Config.set(Platform.AWS, _s3_staging_bucket, _s3_release_bucket)
-            ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
-            Config.set(Platform.GCP, _gs_staging_bucket, _gs_release_bucket)
-            ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
+            with self.subTest("AWS"):
+                Config.set(Platform.AWS, _s3_staging_bucket, _s3_release_bucket)
+                ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
+            with self.subTest("GCP"):
+                Config.set(Platform.GCP, _gs_staging_bucket, _gs_release_bucket)
+                ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
 
 
 class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
