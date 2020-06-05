@@ -4,7 +4,6 @@ import os
 import sys
 import unittest
 import tempfile
-import warnings
 from uuid import uuid4
 from random import randint
 
@@ -16,13 +15,10 @@ sys.path.insert(0, pkg_root)  # noqa
 
 import ssds
 from ssds import config, checksum, aws, s3
+from tests import infra
 
 
-class TestSSDS(unittest.TestCase):
-    def setUp(self):
-        # Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
-        warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
-
+class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_upload(self):
         with tempfile.TemporaryDirectory() as dirname:
             root = os.path.join(dirname, "test_submission")
@@ -50,11 +46,7 @@ class TestSSDS(unittest.TestCase):
             ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
 
 
-class TestSSDSChecksum(unittest.TestCase):
-    def setUp(self):
-        # Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
-        warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
-
+class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_crc32c(self):
         data = b"\x89\xc0\xc6\xcd\xa9$=\xfa\x91\x86\xedi\xec\x18\xcc\xad\xd1\xe1\x82\x8f^\xd2\xdd$\x1fE\x821"
         expected_crc32c = "25c7a879"
@@ -85,7 +77,7 @@ class TestSSDSChecksum(unittest.TestCase):
         self.assertEqual(blob.e_tag.replace('"', ''), cs)
 
 
-class TestS3Multipart(unittest.TestCase):
+class TestS3Multipart(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_get_s3_multipart_chunk_size(self):
         from ssds.s3 import AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB, get_s3_multipart_chunk_size
         with self.subTest("file size smaller than AWS_MAX_MULTIPART_COUNT * AWS_MIN_CHUNK_SIZE"):
