@@ -1,16 +1,20 @@
-from enum import Enum
 import typing
+from enum import Enum
 
-gcp_project = "hpp-ucsc"
-_aws_staging_bucket = "org-hpp-ssds-staging-test"
-_gcp_staging_bucket = "org-hpp-ssds-staging-test"
-_aws_release_bucket = "org-hpp-ssds-release-test"
-_gcp_release_bucket = "org-hpp-ssds-release-test"
 
 class Platform(Enum):
     AWS = "AWS"
     GCP = "GCP"
 
-platform = Platform.AWS
-staging_bucket = _aws_staging_bucket
-release_bucket = _aws_release_bucket
+class Config:
+    platform: typing.Optional[Platform] = None
+    staging_bucket: typing.Optional[str] = None
+    release_bucket: typing.Optional[str] = None
+    gcp_project: typing.Optional[str] = None
+
+    @classmethod
+    def set(cls, platform: Platform, staging_bucket: str, release_bucket: str):
+        assert platform in Platform
+        cls.platform = platform
+        cls.staging_bucket = staging_bucket
+        cls.release_bucket = release_bucket

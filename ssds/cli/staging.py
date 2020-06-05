@@ -5,7 +5,8 @@ import os
 import argparse
 
 import ssds
-from ssds import s3, gs, config
+from ssds import s3, gs
+from ssds.config import Config, Platform
 from ssds.cli import dispatch
 
 staging_cli = dispatch.group("staging", help=__doc__)
@@ -27,10 +28,10 @@ def list(args: argparse.Namespace):
     """
     List submissions in the staging bucket"
     """
-    if config.Platform.AWS == config.platform:
-        listing = s3.list(config.staging_bucket)
+    if Platform.AWS == Config.platform:
+        listing = s3.list(Config.staging_bucket)
     else:
-        listing = gs.list(config.staging_bucket)
+        listing = gs.list(Config.staging_bucket)
     prev_submission_id = ""
     for key in listing:
         try:
