@@ -35,7 +35,7 @@ def list(args: argparse.Namespace):
     prev_submission_id = ""
     for key in listing:
         try:
-            submission_id, submission_name, _ = key.split("/", 2)
+            submission_id, submission_name, _ = key.split("--", 2)
         except ValueError:
             continue
         if submission_id != prev_submission_id:
