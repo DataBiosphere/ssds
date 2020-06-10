@@ -14,10 +14,11 @@ class SSDS:
     platform: typing.Optional[Platform] = None
     blobstore: typing.Optional[types.ModuleType] = None
     bucket: typing.Optional[str] = None
+    prefix: typing.Optional[str] = None
 
     @classmethod
     def list(cls):
-        listing = cls.blobstore.list(cls.bucket)
+        listing = cls.blobstore.list(cls.bucket, cls.prefix)
         prev_submission_id = ""
         for key in listing:
             try:
@@ -31,7 +32,7 @@ class SSDS:
 
     @classmethod
     def list_submission(cls, submission_id: str):
-        for key in cls.blobstore.list(cls.bucket, submission_id):  # type: ignore
+        for key in cls.blobstore.list(cls.bucket, f"{cls.prefix}/{submission_id}"):  # type: ignore
             yield key
 
     @classmethod
@@ -45,13 +46,13 @@ class SSDS:
         assert " " not in description  # TODO: create regex to enforce description format?
         assert "--" not in description  # TODO: create regex to enforce description format?
         filepaths = [p for p in _list_tree(root)]
-        dst_prefix = f"{submission_id}--{description}"
+        dst_prefix = f"{cls.prefix}/{submission_id}--{description}"
         dst_keys = [f"{dst_prefix}/{os.path.relpath(p, root)}" for p in filepaths]
         for filepath, dst_key in zip(filepaths, dst_keys):
             cls.blobstore.upload_object(filepath, cls.bucket, dst_key)  # type: ignore
 
     @classmethod
-    def override(cls, platform=None, blobstore=None, bucket=None):
+    def override(cls, platform=None, blobstore=None, bucket=None, prefix=None):
         """
         Context manager for temporarily changing configuration
         """
@@ -60,14 +61,17 @@ class SSDS:
                 self._old_platform = cls.platform
                 self._old_blobstore = cls.blobstore
                 self._old_bucket = cls.bucket
+                self._old_prefix = cls.prefix
                 cls.platform = platform or cls.platform
                 cls.blobstore = blobstore or cls.blobstore
                 cls.bucket = bucket or cls.bucket
+                cls.prefix = prefix or cls.prefix
 
             def __exit__(self, *args, **kwargs):
                 cls.platform = self._old_platform
                 cls.blobstore = self._old_blobstore
                 cls.bucket = self._old_bucket
+                cls.prefix = self._old_prefix
 
         return _ConfigOverride()
 
@@ -75,6 +79,7 @@ class Staging(SSDS):
     platform = Platform.aws
     blobstore = s3
     bucket = "org-hpp-ssds-staging-test"
+    prefix = "submissions"
 
 class Release(SSDS):
     @classmethod

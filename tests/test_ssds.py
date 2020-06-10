@@ -44,12 +44,13 @@ class TestSSDS(unittest.TestCase, infra.SuppressWarningsMixin):
                     fh.write(os.urandom(200))
             with open(os.path.join(root, "large.dat"), "wb") as fh:
                 fh.write(os.urandom(1024 ** 2 * 80))
+            submission_id = f"{uuid4()}"
             with self.subTest("AWS"):
                 with ssds.Staging.override(ssds.Platform.aws, ssds.s3, _s3_staging_bucket):
-                    ssds.Staging.upload(root, f"{uuid4()}", "this_is_a_test_submission")
+                    ssds.Staging.upload(root, submission_id, "this_is_a_test_submission")
             with self.subTest("GCP"):
                 with ssds.Staging.override(ssds.Platform.gcp, ssds.gs, _gs_staging_bucket):
-                    ssds.Staging.upload(root, f"{uuid4()}", "this_is_a_test_submission")
+                    ssds.Staging.upload(root, submission_id, "this_is_a_test_submission")
 
 
 class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
