@@ -30,6 +30,11 @@ class SSDS:
                 prev_submission_id = submission_id
 
     @classmethod
+    def list_submission(cls, submission_id: str):
+        for key in cls.blobstore.list(cls.bucket, submission_id):
+            yield key
+
+    @classmethod
     def upload(cls, src: str, submission_id: str, description: str):
         cls._upload_local_tree(src, submission_id, description)
 
@@ -76,6 +81,3 @@ def _list_tree(root):
         for filename in filenames:
             relpath = os.path.join(dirpath, filename)
             yield os.path.abspath(relpath)
-
-class Release(SSDS):
-    pass
