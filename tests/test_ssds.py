@@ -43,7 +43,7 @@ class TestSSDS(unittest.TestCase, infra.SuppressWarningsMixin):
                 with open(os.path.join(subsubdir, f"file{i}.dat"), "wb") as fh:
                     fh.write(os.urandom(200))
             with open(os.path.join(root, "large.dat"), "wb") as fh:
-                fh.write(os.urandom(1024 ** 2 * 80))
+                fh.write(os.urandom(1024 ** 2 * 160))
             submission_id = f"{uuid4()}"
             with self.subTest("AWS"):
                 with ssds.Staging.override(ssds.Platform.aws, ssds.s3, _s3_staging_bucket):

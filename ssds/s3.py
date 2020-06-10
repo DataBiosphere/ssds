@@ -44,7 +44,7 @@ def _upload_oneshot(filepath: str, bucket: str, key: str):
     gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
     s3_etag = checksum.md5(data).hexdigest()
     blob.upload_fileobj(io.BytesIO(data))
-    assert s3_etag == blob.e_tag.replace('"', '')
+    assert s3_etag == blob.e_tag.strip("\"")
     return s3_etag, gs_crc32c
 
 def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int):
@@ -59,7 +59,11 @@ def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int):
                                                Key=key,
                                                MultipartUpload=dict(Parts=info['parts']),
                                                UploadId=mpu)
-    s3_etag = aws.resource("s3").Bucket(bucket).Object(key).e_tag.replace('"', '')
+    s3_etag = aws.resource("s3").Bucket(bucket).Object(key).e_tag.strip("\"")
+    bin_md5 = b"".join([checksum.binascii.unhexlify(part['ETag'].strip("\""))
+                        for part in info['parts']])
+    composite_etag = checksum.md5(bin_md5).hexdigest() + "-" + str(len(info['parts']))
+    assert composite_etag == aws.resource("s3").Bucket(bucket).Object(key).e_tag.strip("\"")
     return s3_etag, info['gs_crc32c']
 
 def _copy_parts(mpu: str, bucket: str, key: str, fileobj: typing.BinaryIO, part_size: int):
@@ -80,7 +84,7 @@ def _copy_parts(mpu: str, bucket: str, key: str, fileobj: typing.BinaryIO, part_
         )
         computed_etag = checksum.md5(data).hexdigest()
         crc32c.update(data)
-        assert computed_etag == resp['ETag'].replace('"', '')
+        assert computed_etag == resp['ETag'].strip("\"")
         parts.append(dict(ETag=resp['ETag'], PartNumber=part_number))
     return dict(gs_crc32c=crc32c.google_storage_crc32c(), parts=parts)
 
