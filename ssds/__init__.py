@@ -6,6 +6,10 @@ from enum import Enum
 from ssds import s3, gs
 
 
+MAX_KEY_LENGTH = 1024  # this is the maximum length for S3 and GS object names
+# GS docs: https://cloud.google.com/storage/docs/naming-objects
+# S3 docs: https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html
+
 class Platform(Enum):
     aws = "aws"
     gcp = "gcp"
@@ -48,6 +52,11 @@ class SSDS:
         filepaths = [p for p in _list_tree(root)]
         dst_prefix = f"{cls.prefix}/{submission_id}--{description}"
         dst_keys = [f"{dst_prefix}/{os.path.relpath(p, root)}" for p in filepaths]
+        for key in dst_keys:
+            if MAX_KEY_LENGTH <= len(key):
+                raise ValueError(f"Total key length must not exceed {len(MAX_KEY_LENGTH)} characters {os.linesep}"
+                                 f"{key} is too long {os.linesep}"
+                                 f"Use a shorter submission name")
         for filepath, dst_key in zip(filepaths, dst_keys):
             cls.blobstore.upload_object(filepath, cls.bucket, dst_key)  # type: ignore
 
