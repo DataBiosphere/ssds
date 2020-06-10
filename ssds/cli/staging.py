@@ -28,19 +28,8 @@ def list(args: argparse.Namespace):
     """
     List submissions in the staging bucket"
     """
-    if Platform.AWS == Config.platform:
-        listing = s3.list(Config.staging_bucket)
-    else:
-        listing = gs.list(Config.staging_bucket)
-    prev_submission_id = ""
-    for key in listing:
-        try:
-            submission_id, submission_name = key.split("--", 1)
-        except ValueError:
-            continue
-        if submission_id != prev_submission_id:
-            print(submission_name, submission_id)
-            prev_submission_id = submission_id
+    for submission_id, submission_name in ssds.list():
+        print(submission_id, submission_name)
 
 @staging_cli.command("release")
 def release(args: argparse.Namespace):
