@@ -19,14 +19,14 @@ def upload(args: argparse.Namespace):
     Upload a local directory tree to the staging bucket
     """
     root = os.path.abspath(os.path.normpath(args.path))
-    ssds.upload(root, args.submission_id, args.name)
+    ssds.Staging.upload(root, args.submission_id, args.name)
 
 @staging_cli.command("list")
 def list(args: argparse.Namespace):
     """
     List submissions in the staging bucket"
     """
-    for submission_id, submission_name in ssds.list():
+    for submission_id, submission_name in ssds.Staging.list():
         print(submission_id, submission_name)
 
 @staging_cli.command("release")
