@@ -54,7 +54,7 @@ class SSDS:
         dst_keys = [f"{dst_prefix}/{os.path.relpath(p, root)}" for p in filepaths]
         for key in dst_keys:
             if MAX_KEY_LENGTH <= len(key):
-                raise ValueError(f"Total key length must not exceed {len(MAX_KEY_LENGTH)} characters {os.linesep}"
+                raise ValueError(f"Total key length must not exceed {MAX_KEY_LENGTH} characters {os.linesep}"
                                  f"{key} is too long {os.linesep}"
                                  f"Use a shorter submission name")
         for filepath, dst_key in zip(filepaths, dst_keys):
