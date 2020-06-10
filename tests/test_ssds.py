@@ -45,12 +45,30 @@ class TestSSDS(unittest.TestCase, infra.SuppressWarningsMixin):
             with open(os.path.join(root, "large.dat"), "wb") as fh:
                 fh.write(os.urandom(1024 ** 2 * 160))
             submission_id = f"{uuid4()}"
-            with self.subTest("AWS"):
+            submission_name = "this_is_a_test_submission"
+            with self.subTest("aws"):
                 with ssds.Staging.override(ssds.Platform.aws, ssds.s3, _s3_staging_bucket):
-                    ssds.Staging.upload(root, submission_id, "this_is_a_test_submission")
-            with self.subTest("GCP"):
+                    ssds.Staging.upload(root, submission_id, submission_name)
+            with self.subTest("gcp"):
                 with ssds.Staging.override(ssds.Platform.gcp, ssds.gs, _gs_staging_bucket):
-                    ssds.Staging.upload(root, submission_id, "this_is_a_test_submission")
+                    ssds.Staging.upload(root, submission_id, submission_name)
+
+    def test_upload_name_length_error(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = os.path.join(dirname, "test_submission")
+            os.mkdir(root)
+            with open(os.path.join(root, "file.dat"), "wb") as fh:
+                fh.write(os.urandom(200))
+            submission_id = f"{uuid4()}"
+            submission_name = "a" * ssds.MAX_KEY_LENGTH
+            with self.subTest("aws"):
+                with ssds.Staging.override(ssds.Platform.aws, ssds.s3, _s3_staging_bucket):
+                    with self.assertRaises(ValueError):
+                        ssds.Staging.upload(root, submission_id, submission_name)
+            with self.subTest("gcp"):
+                with ssds.Staging.override(ssds.Platform.gcp, ssds.gs, _gs_staging_bucket):
+                    with self.assertRaises(ValueError):
+                        ssds.Staging.upload(root, submission_id, submission_name)
 
 
 class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
