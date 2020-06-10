@@ -29,6 +29,17 @@ def list(args: argparse.Namespace):
     for submission_id, submission_name in ssds.Staging.list():
         print(submission_id, submission_name)
 
+@staging_cli.command("list-submission", arguments={
+    "--submission-id": dict(type=str, required=True, help="id of submission")
+})
+def list_submission(args: argparse.Namespace):
+    submission_exists = False
+    for key in ssds.Staging.list_submission(args.submission_id):
+        submission_exists = True
+        print(key)
+    if not submission_exists:
+        print(f"No submission found for {args.submission_id}")
+
 @staging_cli.command("release")
 def release(args: argparse.Namespace):
     raise NotImplementedError()

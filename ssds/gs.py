@@ -66,6 +66,6 @@ def _upload_multipart(filepath: str, bucket_name: str, key: str, part_size: int)
     assert gs_crc32c == bucket.get_blob(key).crc32c
     return s3_etag, gs_crc32c
 
-def list(bucket_name: str):
-    for blob in client().bucket(bucket_name).list_blobs():
+def list(bucket_name: str, prefix=""):
+    for blob in client().bucket(bucket_name).list_blobs(prefix=prefix):
         yield blob.name

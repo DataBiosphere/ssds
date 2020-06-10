@@ -84,6 +84,6 @@ def _copy_parts(mpu: str, bucket: str, key: str, fileobj: typing.BinaryIO, part_
         parts.append(dict(ETag=resp['ETag'], PartNumber=part_number))
     return dict(gs_crc32c=crc32c.google_storage_crc32c(), parts=parts)
 
-def list(bucket: str):
-    for item in aws.resource("s3").Bucket(bucket).objects.all():
+def list(bucket: str, prefix=""):
+    for item in aws.resource("s3").Bucket(bucket).objects.filter(Prefix=prefix):
         yield item.key
