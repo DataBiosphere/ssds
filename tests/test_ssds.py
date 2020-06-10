@@ -20,6 +20,8 @@ _s3_staging_bucket = infra.get_env("SSDS_S3_STAGING_TEST_BUCKET")
 _gs_staging_bucket = infra.get_env("SSDS_GS_STAGING_TEST_BUCKET")
 _s3_release_bucket = infra.get_env("SSDS_S3_RELEASE_TEST_BUCKET")
 _gs_release_bucket = infra.get_env("SSDS_GS_RELEASE_TEST_BUCKET")
+ssds.Staging.blobstore = ssds.s3
+ssds.Staging.bucket = _s3_staging_bucket
 
 
 class TestSSDS(unittest.TestCase, infra.SuppressWarningsMixin):
@@ -47,10 +49,10 @@ class TestSSDS(unittest.TestCase, infra.SuppressWarningsMixin):
             submission_id = f"{uuid4()}"
             submission_name = "this_is_a_test_submission"
             with self.subTest("aws"):
-                with ssds.Staging.override(ssds.Platform.aws, ssds.s3, _s3_staging_bucket):
+                with ssds.Staging.override(ssds.s3, _s3_staging_bucket):
                     ssds.Staging.upload(root, submission_id, submission_name)
             with self.subTest("gcp"):
-                with ssds.Staging.override(ssds.Platform.gcp, ssds.gs, _gs_staging_bucket):
+                with ssds.Staging.override(ssds.gs, _gs_staging_bucket):
                     ssds.Staging.upload(root, submission_id, submission_name)
 
     def test_upload_name_length_error(self):
@@ -62,11 +64,11 @@ class TestSSDS(unittest.TestCase, infra.SuppressWarningsMixin):
             submission_id = f"{uuid4()}"
             submission_name = "a" * ssds.MAX_KEY_LENGTH
             with self.subTest("aws"):
-                with ssds.Staging.override(ssds.Platform.aws, ssds.s3, _s3_staging_bucket):
+                with ssds.Staging.override(ssds.s3, _s3_staging_bucket):
                     with self.assertRaises(ValueError):
                         ssds.Staging.upload(root, submission_id, submission_name)
             with self.subTest("gcp"):
-                with ssds.Staging.override(ssds.Platform.gcp, ssds.gs, _gs_staging_bucket):
+                with ssds.Staging.override(ssds.gs, _gs_staging_bucket):
                     with self.assertRaises(ValueError):
                         ssds.Staging.upload(root, submission_id, submission_name)
 

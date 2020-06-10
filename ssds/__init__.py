@@ -1,7 +1,6 @@
 import os
 import types
 import typing
-from enum import Enum
 
 from ssds import s3, gs
 
@@ -10,12 +9,7 @@ MAX_KEY_LENGTH = 1024  # this is the maximum length for S3 and GS object names
 # GS docs: https://cloud.google.com/storage/docs/naming-objects
 # S3 docs: https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html
 
-class Platform(Enum):
-    aws = "aws"
-    gcp = "gcp"
-
 class SSDS:
-    platform: typing.Optional[Platform] = None
     blobstore: typing.Optional[types.ModuleType] = None
     bucket: typing.Optional[str] = None
     prefix: typing.Optional[str] = None
@@ -61,23 +55,20 @@ class SSDS:
             cls.blobstore.upload_object(filepath, cls.bucket, dst_key)  # type: ignore
 
     @classmethod
-    def override(cls, platform=None, blobstore=None, bucket=None, prefix=None):
+    def override(cls, blobstore=None, bucket=None, prefix=None):
         """
         Context manager for temporarily changing configuration
         """
         class _ConfigOverride:
             def __enter__(self, *args, **kwargs):
-                self._old_platform = cls.platform
                 self._old_blobstore = cls.blobstore
                 self._old_bucket = cls.bucket
                 self._old_prefix = cls.prefix
-                cls.platform = platform or cls.platform
                 cls.blobstore = blobstore or cls.blobstore
                 cls.bucket = bucket or cls.bucket
                 cls.prefix = prefix or cls.prefix
 
             def __exit__(self, *args, **kwargs):
-                cls.platform = self._old_platform
                 cls.blobstore = self._old_blobstore
                 cls.bucket = self._old_bucket
                 cls.prefix = self._old_prefix
@@ -85,7 +76,6 @@ class SSDS:
         return _ConfigOverride()
 
 class Staging(SSDS):
-    platform = Platform.aws
     blobstore = s3
     bucket = "org-hpp-ssds-staging-test"
     prefix = "submissions"
