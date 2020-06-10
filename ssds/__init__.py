@@ -10,8 +10,9 @@ def _upload_local_tree(root: str, submission_id: str, description: str):
     root = os.path.normpath(root)
     assert root == os.path.abspath(root)
     assert " " not in description  # TODO: create regex to enforce description format?
+    assert "--" not in description  # TODO: create regex to enforce description format?
     filepaths = [p for p in _list_tree(root)]
-    dst_prefix = f"{submission_id}/{description}"
+    dst_prefix = f"{submission_id}--{description}"
     dst_keys = [f"{dst_prefix}/{os.path.relpath(p, root)}" for p in filepaths]
     if Platform.AWS == Config.platform:
         for filepath, dst_key in zip(filepaths, dst_keys):
