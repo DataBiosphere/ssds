@@ -7,15 +7,16 @@ import gs_chunked_io as gscio
 from google.cloud.storage import Client
 
 from ssds import checksum
-from ssds.config import Config
 from ssds.s3 import get_s3_multipart_chunk_size
+
 
 # Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
 warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
 
+
 @lru_cache()
 def client():
-    return Client(project=Config.gcp_project)
+    return Client()
 
 def upload_object(filepath: str, bucket: str, key: str):
     size = os.stat(filepath).st_size
