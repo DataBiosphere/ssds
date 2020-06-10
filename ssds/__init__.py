@@ -76,6 +76,11 @@ class Staging(SSDS):
     blobstore = s3
     bucket = "org-hpp-ssds-staging-test"
 
+class Release(SSDS):
+    @classmethod
+    def upload(cls, *args, **kargs):
+        raise NotImplementedError("Direct uploads to the release area are not supported.")
+
 def _list_tree(root):
     for (dirpath, dirnames, filenames) in os.walk(root):
         for filename in filenames:
