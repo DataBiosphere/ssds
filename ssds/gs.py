@@ -16,6 +16,8 @@ warnings.filterwarnings("ignore", "Your application has authenticated using end 
 
 @lru_cache()
 def client():
+    if not os.environ.get('GOOGLE_CLOUD_PROJECT'):
+        raise RuntimeError("Please set the GOOGLE_CLOUD_PROJECT environment variable")
     return Client()
 
 def upload_object(filepath: str, bucket: str, key: str):
