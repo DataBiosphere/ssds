@@ -1,8 +1,9 @@
 # ssds
 The stupid simple data store.
 
-Upload directory trees to S3 or GS cloud buckets as "submissions". Each submission takes a user assigned universal
-identifier and a human readable name. The cloud location of the submission has the key structure `{uuid}-{name}/{tree}`.
+Upload directory trees to S3 or GS cloud buckets as "submissions". Each submission takes a user assigned
+identifier and a human readable name. The cloud location of the submission has the key structure
+`submissions/{uuid}--{name}/{tree}`.
 
 All uploads are checksummed and verified. Multpart uploads use defined chunk sizes to consistently track compose S3
 ETags.
@@ -13,17 +14,25 @@ pip install git+https://github.com/xbrianh/ssds
 ```
 
 # Usage
-Upload to the s3 test bucket:
+Upload a submission directory
 ```
-ssds upload --submission-id e03d00d3-ac67-4eb3-b946-92d39fa7bee0 --human-readable-name my_cool_submission /path/to/my/tree/root
-```
-
-Upload to an S3 bucket:
-```
-ssds upload --bucket s3://my-bucket-name --submission-id e03d00d3-ac67-4eb3-b946-92d39fa7bee0 --human-readable-name my_cool_submission /path/to/my/tree/root
+ssds staging upload --submission-id my_submission_id --name my_cool_submission /local/path/to/my/submission
 ```
 
-Upload to a GS bucket:
+List all staging submissions
 ```
-ssds upload --bucket gs://my-bucket-name --submission-id e03d00d3-ac67-4eb3-b946-92d39fa7bee0 --human-readable-name my_cool_submission /path/to/my/tree/root
+ssds staging list
 ```
+
+List contents of a staging submission
+```
+ssds staging list-submission --submission-id my_submission_id
+```
+
+## Links
+Project home page [GitHub](https://github.com/xbrianh/ssds)  
+
+### Bugs
+Please report bugs, issues, feature requests, etc. on [GitHub](https://github.com/xbrianh/ssds).
+
+![](https://travis-ci.org/xbrianh/ssds.svg?branch=master)
