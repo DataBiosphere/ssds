@@ -5,8 +5,6 @@ import os
 import argparse
 
 import ssds
-from ssds import s3, gs
-from ssds.config import Config, Platform
 from ssds.cli import dispatch
 
 staging_cli = dispatch.group("staging", help=__doc__)

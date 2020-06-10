@@ -14,8 +14,8 @@ pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noq
 sys.path.insert(0, pkg_root)  # noqa
 
 import ssds
-from ssds import checksum, aws, s3
-from ssds.config import Config, Platform
+from ssds import checksum, aws, s3, gs
+from ssds.config import Staging, Platform
 from tests import infra
 
 
@@ -23,7 +23,6 @@ _s3_staging_bucket = infra.get_env("SSDS_S3_STAGING_TEST_BUCKET")
 _gs_staging_bucket = infra.get_env("SSDS_GS_STAGING_TEST_BUCKET")
 _s3_release_bucket = infra.get_env("SSDS_S3_RELEASE_TEST_BUCKET")
 _gs_release_bucket = infra.get_env("SSDS_GS_RELEASE_TEST_BUCKET")
-Config.gcp_project = infra.get_env("GOOGLE_CLOUD_PROJECT")
 
 
 class TestSSDS(unittest.TestCase, infra.SuppressWarningsMixin):
@@ -49,11 +48,11 @@ class TestSSDS(unittest.TestCase, infra.SuppressWarningsMixin):
             with open(os.path.join(root, "large.dat"), "wb") as fh:
                 fh.write(os.urandom(1024 ** 2 * 80))
             with self.subTest("AWS"):
-                Config.set(Platform.AWS, _s3_staging_bucket, _s3_release_bucket)
-                ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
+                with Staging.override(Platform.aws, s3, _s3_staging_bucket):
+                    ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
             with self.subTest("GCP"):
-                Config.set(Platform.GCP, _gs_staging_bucket, _gs_release_bucket)
-                ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
+                with Staging.override(Platform.gcp, gs, _gs_staging_bucket):
+                    ssds.upload(root, f"{uuid4()}", "this_is_a_test_submission")
 
 
 class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
@@ -85,7 +84,6 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
             blob.upload_fileobj(fh)
         cs = checksum.md5(data).hexdigest()
         self.assertEqual(blob.e_tag.replace('"', ''), cs)
-
 
 class TestS3Multipart(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_get_s3_multipart_chunk_size(self):
