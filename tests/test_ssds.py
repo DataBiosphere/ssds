@@ -68,11 +68,13 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             with self.subTest("aws"):
                 with ssds.Staging.override(ssds.s3, _s3_staging_bucket):
                     with self.assertRaises(ValueError):
-                        ssds.Staging.upload(root, submission_id, submission_name)
+                        for _ in ssds.Staging.upload(root, submission_id, submission_name):
+                            pass
             with self.subTest("gcp"):
                 with ssds.Staging.override(ssds.gs, _gs_staging_bucket):
                     with self.assertRaises(ValueError):
-                        ssds.Staging.upload(root, submission_id, submission_name)
+                        for _ in ssds.Staging.upload(root, submission_id, submission_name):
+                            pass
 
 
 class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
