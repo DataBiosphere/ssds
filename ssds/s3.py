@@ -5,6 +5,9 @@ from math import ceil
 
 from ssds import aws, checksum
 
+
+schema = "s3://"
+
 MiB = 1024 ** 2
 
 AWS_MIN_CHUNK_SIZE = 64 * MiB
@@ -33,7 +36,6 @@ def upload_object(filepath: str, bucket: str, key: str):
         s3_etag, gs_crc32c = _upload_oneshot(filepath, bucket, key)
     else:
         s3_etag, gs_crc32c = _upload_multipart(filepath, bucket, key, chunk_size)
-    print(f"s3://{bucket}/{key}")
     tags = dict(TagSet=[dict(Key="SSDS_MD5", Value=s3_etag), dict(Key="SSDS_CRC32C", Value=gs_crc32c)])
     aws.client("s3").put_object_tagging(Bucket=bucket, Key=key, Tagging=tags)
 
