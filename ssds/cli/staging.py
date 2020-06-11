@@ -19,7 +19,8 @@ def upload(args: argparse.Namespace):
     Upload a local directory tree to the staging bucket
     """
     root = os.path.abspath(os.path.normpath(args.path))
-    ssds.Staging.upload(root, args.submission_id, args.name)
+    for ssds_key in ssds.Staging.upload(root, args.submission_id, args.name):
+        print(ssds.Staging.compose_blobstore_url(ssds_key))
 
 @staging_cli.command("list")
 def list(args: argparse.Namespace):
@@ -34,9 +35,9 @@ def list(args: argparse.Namespace):
 })
 def list_submission(args: argparse.Namespace):
     submission_exists = False
-    for key in ssds.Staging.list_submission(args.submission_id):
+    for ssds_key in ssds.Staging.list_submission(args.submission_id):
         submission_exists = True
-        print(key)
+        print(ssds.Staging.compose_blobstore_url(ssds_key))
     if not submission_exists:
         print(f"No submission found for {args.submission_id}")
 

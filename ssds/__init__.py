@@ -32,11 +32,13 @@ class SSDS:
     @classmethod
     def list_submission(cls, submission_id: str):
         for key in cls.blobstore.list(cls.bucket, f"{cls.prefix}/{submission_id}"):  # type: ignore
-            yield key
+            ssds_key = key.strip(f"{cls.prefix}/")
+            yield ssds_key
 
     @classmethod
     def upload(cls, src: str, submission_id: str, description: str):
-        cls._upload_local_tree(src, submission_id, description)
+        for ssds_key in cls._upload_local_tree(src, submission_id, description):
+            yield ssds_key
 
     @classmethod
     def _upload_local_tree(cls, root: str, submission_id: str, description: str):
@@ -45,20 +47,22 @@ class SSDS:
         assert " " not in description  # TODO: create regex to enforce description format?
         assert "--" not in description  # TODO: create regex to enforce description format?
         filepaths = [p for p in _list_tree(root)]
-        dst_prefix = f"{cls.prefix}/{submission_id}--{description}"
-        dst_keys = [f"{dst_prefix}/{os.path.relpath(p, root)}" for p in filepaths]
-        for key in dst_keys:
+        dst_prefix = f"{submission_id}--{description}"
+        ssds_keys = [f"{dst_prefix}/{os.path.relpath(p, root)}" for p in filepaths]
+        for ssds_key in ssds_keys:
+            key = f"{cls.prefix}{ssds_key}"
             if MAX_KEY_LENGTH <= len(key):
                 raise ValueError(f"Total key length must not exceed {MAX_KEY_LENGTH} characters {os.linesep}"
                                  f"{key} is too long {os.linesep}"
                                  f"Use a shorter submission name")
-        for filepath, dst_key in zip(filepaths, dst_keys):
-            print(f"Uploading {cls.compose_blobstore_url(dst_key)}")
+        for filepath, ssds_key in zip(filepaths, ssds_keys):
+            dst_key = f"{cls.prefix}/{ssds_key}"
             cls.blobstore.upload_object(filepath, cls.bucket, dst_key)  # type: ignore
+            yield ssds_key
 
     @classmethod
-    def compose_blobstore_url(cls, key):
-        return f"{cls.blobstore.schema}{cls.bucket}/{key}"
+    def compose_blobstore_url(cls, ssds_key: str):
+        return f"{cls.blobstore.schema}{cls.bucket}/{cls.prefix}/{ssds_key}"  # type: ignore
 
     @classmethod
     def override(cls, blobstore=None, bucket=None, prefix=None):
