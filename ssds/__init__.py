@@ -13,6 +13,7 @@ class SSDS:
     blobstore: typing.Optional[types.ModuleType] = None
     bucket: typing.Optional[str] = None
     prefix: typing.Optional[str] = None
+    _name_delimeter = "--"  # Not using "/" as name delimeter produces friendlier `aws s3` listing
 
     @classmethod
     def list(cls):
@@ -21,7 +22,7 @@ class SSDS:
         for key in listing:
             try:
                 ssds_key = key.strip(f"{cls.prefix}/")
-                submission_id, parts = ssds_key.split("--", 1)
+                submission_id, parts = ssds_key.split(cls._name_delimeter, 1)
                 submission_name, _ = parts.split("/", 1)
             except ValueError:
                 continue
@@ -45,9 +46,9 @@ class SSDS:
         root = os.path.normpath(root)
         assert root == os.path.abspath(root)
         assert " " not in description  # TODO: create regex to enforce description format?
-        assert "--" not in description  # TODO: create regex to enforce description format?
+        assert cls._name_delimeter not in description  # TODO: create regex to enforce description format?
         filepaths = [p for p in _list_tree(root)]
-        dst_prefix = f"{submission_id}--{description}"
+        dst_prefix = f"{submission_id}{cls._name_delimeter}{description}"
         ssds_keys = [f"{dst_prefix}/{os.path.relpath(p, root)}" for p in filepaths]
         for ssds_key in ssds_keys:
             key = f"{cls.prefix}{ssds_key}"
