@@ -13,6 +13,8 @@ pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noq
 sys.path.insert(0, pkg_root)  # noqa
 
 import ssds
+from ssds.blobstore.s3 import S3BlobStore
+from ssds.blobstore.gs import GSBlobStore
 from tests import infra
 
 
@@ -20,7 +22,7 @@ _s3_staging_bucket = infra.get_env("SSDS_S3_STAGING_TEST_BUCKET")
 _gs_staging_bucket = infra.get_env("SSDS_GS_STAGING_TEST_BUCKET")
 _s3_release_bucket = infra.get_env("SSDS_S3_RELEASE_TEST_BUCKET")
 _gs_release_bucket = infra.get_env("SSDS_GS_RELEASE_TEST_BUCKET")
-ssds.Staging.blobstore = ssds.s3
+ssds.Staging.blobstore = S3BlobStore()
 ssds.Staging.bucket = _s3_staging_bucket
 
 
@@ -49,11 +51,11 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             submission_id = f"{uuid4()}"
             submission_name = "this_is_a_test_submission"
             with self.subTest("aws"):
-                with ssds.Staging.override(ssds.s3, _s3_staging_bucket):
+                with ssds.Staging.override(S3BlobStore(), _s3_staging_bucket):
                     for ssds_key in ssds.Staging.upload(root, submission_id, submission_name):
                         print(ssds.Staging.compose_blobstore_url(ssds_key))
             with self.subTest("gcp"):
-                with ssds.Staging.override(ssds.gs, _gs_staging_bucket):
+                with ssds.Staging.override(GSBlobStore(), _gs_staging_bucket):
                     for ssds_key in ssds.Staging.upload(root, submission_id, submission_name):
                         print(ssds.Staging.compose_blobstore_url(ssds_key))
 
@@ -66,12 +68,12 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             submission_id = f"{uuid4()}"
             submission_name = "a" * ssds.MAX_KEY_LENGTH
             with self.subTest("aws"):
-                with ssds.Staging.override(ssds.s3, _s3_staging_bucket):
+                with ssds.Staging.override(S3BlobStore(), _s3_staging_bucket):
                     with self.assertRaises(ValueError):
                         for _ in ssds.Staging.upload(root, submission_id, submission_name):
                             pass
             with self.subTest("gcp"):
-                with ssds.Staging.override(ssds.gs, _gs_staging_bucket):
+                with ssds.Staging.override(GSBlobStore(), _gs_staging_bucket):
                     with self.assertRaises(ValueError):
                         for _ in ssds.Staging.upload(root, submission_id, submission_name):
                             pass
@@ -109,7 +111,8 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
 
 class TestS3Multipart(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_get_s3_multipart_chunk_size(self):
-        from ssds.s3 import AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB, get_s3_multipart_chunk_size
+        from ssds.blobstore import AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB
+        from ssds.blobstore.s3 import get_s3_multipart_chunk_size
         with self.subTest("file size smaller than AWS_MAX_MULTIPART_COUNT * AWS_MIN_CHUNK_SIZE"):
             sz = AWS_MIN_CHUNK_SIZE * 2.234
             self.assertEqual(AWS_MIN_CHUNK_SIZE, get_s3_multipart_chunk_size(sz))
@@ -124,6 +127,11 @@ class TestS3Multipart(infra.SuppressWarningsMixin, unittest.TestCase):
             for sz, expected_chunk_size in pairs:
                 chunk_size = get_s3_multipart_chunk_size(sz)
                 self.assertEqual(expected_chunk_size, chunk_size)
+
+class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
+    def test_schema(self):
+        self.assertEqual("s3://", S3BlobStore.schema)
+        self.assertEqual("gs://", GSBlobStore.schema)
 
 
 if __name__ == '__main__':
