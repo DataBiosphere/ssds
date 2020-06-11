@@ -47,7 +47,10 @@ class SSDS:
         return name
 
     @classmethod
-    def upload(cls, root: str, submission_id: str, name: typing.Optional[str]=None) -> typing.Generator[str]:
+    def upload(cls,
+               root: str,
+               submission_id: str,
+               name: typing.Optional[str]=None) -> typing.Generator[str, None, None]:
         """
         Upload files from root directory and yield ssds_key for each file.
         This returns a generator that must be iterated for uploads to occur.
