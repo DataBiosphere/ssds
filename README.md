@@ -14,9 +14,14 @@ pip install git+https://github.com/xbrianh/ssds
 ```
 
 # Usage
-Upload a submission directory
+Make a new submission
 ```
-ssds staging upload --submission-id my_submission_id --name my_cool_submission /local/path/to/my/submission
+ssds staging upload --submission-id my_submission_id --name my_cool_submission_name /local/path/to/my/submission
+```
+
+Update an existing submission
+```
+ssds staging upload --submission-id my_existing_submission_id /local/path/to/my/submission
 ```
 
 List all staging submissions
