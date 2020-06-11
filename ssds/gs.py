@@ -14,6 +14,8 @@ from ssds.s3 import get_s3_multipart_chunk_size
 warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
 
 
+schema = "gs://"
+
 @lru_cache()
 def client():
     if not os.environ.get('GOOGLE_CLOUD_PROJECT'):
@@ -27,7 +29,6 @@ def upload_object(filepath: str, bucket: str, key: str):
         s3_etag, gs_crc32c = _upload_oneshot(filepath, bucket, key)
     else:
         s3_etag, gs_crc32c = _upload_multipart(filepath, bucket, key, chunk_size)
-    print(f"gs://{bucket}/{key}")
     blob = client().bucket(bucket).blob(key)
     blob.metadata = dict(SSDS_MD5=s3_etag, SSDS_CRC32C=gs_crc32c)
     blob.patch()

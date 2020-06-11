@@ -52,7 +52,12 @@ class SSDS:
                                  f"{key} is too long {os.linesep}"
                                  f"Use a shorter submission name")
         for filepath, dst_key in zip(filepaths, dst_keys):
+            print(f"Uploading {cls.compose_blobstore_url(dst_key)}")
             cls.blobstore.upload_object(filepath, cls.bucket, dst_key)  # type: ignore
+
+    @classmethod
+    def compose_blobstore_url(cls, key):
+        return f"{cls.blobstore.schema}{cls.bucket}/{key}"
 
     @classmethod
     def override(cls, blobstore=None, bucket=None, prefix=None):
