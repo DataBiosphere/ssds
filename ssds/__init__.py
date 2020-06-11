@@ -37,18 +37,35 @@ class SSDS:
             yield ssds_key
 
     @classmethod
-    def upload(cls, src: str, submission_id: str, description: str):
-        for ssds_key in cls._upload_local_tree(src, submission_id, description):
+    def get_submission_name(cls, submission_id: str):
+        name = None
+        for key in cls.blobstore.list(cls.bucket, f"{cls.prefix}/{submission_id}"):
+            ssds_key = key.strip(f"{cls.prefix}/")
+            _, parts = ssds_key.split(cls._name_delimeter, 1)
+            name, _ = parts.split("/", 1)
+            break
+        return name
+
+    @classmethod
+    def upload(cls, src: str, submission_id: str, name: typing.Optional[str]=None):
+        existing_name = cls.get_submission_name(submission_id)
+        if not name:
+            if not existing_name:
+                raise ValueError("Must provide name for new submissions")
+            name = existing_name
+        elif existing_name and existing_name != name:
+            raise ValueError("Cannot update name of existing submission")
+        for ssds_key in cls._upload_local_tree(src, submission_id, name):
             yield ssds_key
 
     @classmethod
-    def _upload_local_tree(cls, root: str, submission_id: str, description: str):
+    def _upload_local_tree(cls, root: str, submission_id: str, name: str):
         root = os.path.normpath(root)
         assert root == os.path.abspath(root)
-        assert " " not in description  # TODO: create regex to enforce description format?
-        assert cls._name_delimeter not in description  # TODO: create regex to enforce description format?
+        assert " " not in name  # TODO: create regex to enforce name format?
+        assert cls._name_delimeter not in name  # TODO: create regex to enforce name format?
         filepaths = [p for p in _list_tree(root)]
-        dst_prefix = f"{submission_id}{cls._name_delimeter}{description}"
+        dst_prefix = f"{submission_id}{cls._name_delimeter}{name}"
         ssds_keys = [f"{dst_prefix}/{os.path.relpath(p, root)}" for p in filepaths]
         for ssds_key in ssds_keys:
             key = f"{cls.prefix}{ssds_key}"

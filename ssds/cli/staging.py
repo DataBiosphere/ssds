@@ -11,12 +11,13 @@ staging_cli = dispatch.group("staging", help=__doc__)
 
 @staging_cli.command("upload", arguments={
     "--submission-id": dict(type=str, required=True, help="Submission id provided for your submission"),
-    "--name": dict(type=str, required=True, help="Human readable name of submission. Cannot contain spaces"),
+    "--name": dict(type=str, default=None, help="Human readable name of submission. Cannot contain spaces"),
     "path": dict(type=str, help="Directory containing submission material"),
 })
 def upload(args: argparse.Namespace):
     """
-    Upload a local directory tree to the staging bucket
+    Upload a local directory tree to the staging bucket.
+    Existing files in the submission will be overwritten.
     """
     root = os.path.abspath(os.path.normpath(args.path))
     for ssds_key in ssds.Staging.upload(root, args.submission_id, args.name):

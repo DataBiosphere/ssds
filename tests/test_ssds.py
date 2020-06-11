@@ -78,6 +78,31 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                         for _ in ssds.Staging.upload(root, submission_id, submission_name):
                             pass
 
+    def test_upload_name_collisions(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = os.path.join(dirname, "test_submission")
+            os.mkdir(root)
+            with open(os.path.join(root, "file.dat"), "wb") as fh:
+                fh.write(os.urandom(200))
+            submission_id = f"{uuid4()}"
+            submission_name = None
+            with self.subTest("Must provide name for new submission"):
+                with self.assertRaises(ValueError):
+                    for _ in ssds.Staging.upload(root, submission_id, submission_name):
+                        pass
+            with self.subTest("Should succeed with a name"):
+                submission_name = "name_collision_test_submission"
+                for ssds_key in ssds.Staging.upload(root, submission_id, submission_name):
+                    print(ssds.Staging.compose_blobstore_url(ssds_key))
+            with self.subTest("Should raise if provided name collides with existing name"):
+                submission_name = "name_collision_test_submission_wrong_name"
+                with self.assertRaises(ValueError):
+                    for ssds_key in ssds.Staging.upload(root, submission_id, submission_name):
+                        pass
+            with self.subTest("Submitting submission again should succeed while omitting name"):
+                for ssds_key in ssds.Staging.upload(root, submission_id):
+                    print(ssds.Staging.compose_blobstore_url(ssds_key))
+
 
 class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_crc32c(self):
