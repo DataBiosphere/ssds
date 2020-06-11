@@ -87,7 +87,7 @@ class SSDS:
 
 class Staging(SSDS):
     blobstore = s3
-    bucket = "org-hpp-ssds-staging-test"
+    bucket = "human-pangenomics"
     prefix = "submissions"
 
 class Release(SSDS):
