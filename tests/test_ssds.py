@@ -24,7 +24,7 @@ ssds.Staging.blobstore = ssds.s3
 ssds.Staging.bucket = _s3_staging_bucket
 
 
-class TestSSDS(unittest.TestCase, infra.SuppressWarningsMixin):
+class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_upload(self):
         with tempfile.TemporaryDirectory() as dirname:
             root = os.path.join(dirname, "test_submission")
