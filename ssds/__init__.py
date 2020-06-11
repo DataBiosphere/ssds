@@ -83,36 +83,13 @@ class SSDS:
     def compose_blobstore_url(self, ssds_key: str):
         return f"{self.blobstore.schema}{self.bucket}/{self.prefix}/{ssds_key}"
 
-    def override(self, blobstore=None, bucket=None, prefix=None):
-        """
-        Context manager for temporarily changing configuration
-        """
-        class _ConfigOverride:
-            def __enter__(co, *args, **kwargs):
-                co._old_blobstore = self.blobstore
-                co._old_bucket = self.bucket
-                co._old_prefix = self.prefix
-                self.blobstore = blobstore or self.blobstore
-                self.bucket = bucket or self.bucket
-                self.prefix = prefix or self.prefix
+class Staging(SSDS):
+    blobstore: typing.Optional[BlobStore] = S3BlobStore()
+    bucket = "human-pangenomics"
 
-            def __exit__(co, *args, **kwargs):
-                self.blobstore = co._old_blobstore
-                self.bucket = co._old_bucket
-                self.prefix = co._old_prefix
-
-        return _ConfigOverride()
-
-class _Staging(SSDS):
-    blobstore = S3BlobStore()
-    # bucket = "human-pangenomics"
-    bucket = "org-hpp-ssds-staging-test"
-Staging = _Staging()
-
-class _Release(SSDS):
+class Release(SSDS):
     def upload(self, *args, **kargs):
         raise NotImplementedError("Direct uploads to the release area are not supported.")
-Release = _Release()
 
 def _list_tree(root):
     for (dirpath, dirnames, filenames) in os.walk(root):

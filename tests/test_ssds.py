@@ -22,9 +22,20 @@ _s3_staging_bucket = infra.get_env("SSDS_S3_STAGING_TEST_BUCKET")
 _gs_staging_bucket = infra.get_env("SSDS_GS_STAGING_TEST_BUCKET")
 _s3_release_bucket = infra.get_env("SSDS_S3_RELEASE_TEST_BUCKET")
 _gs_release_bucket = infra.get_env("SSDS_GS_RELEASE_TEST_BUCKET")
-ssds.Staging.blobstore = S3BlobStore()
-ssds.Staging.bucket = _s3_staging_bucket
 
+# Prevent accidental data upload to main HPP bucket
+ssds.Staging.blobstore = None
+ssds.Staging.bucket = None
+
+class _StagingS3(ssds.Staging):
+    blobstore = S3BlobStore()
+    bucket = _s3_staging_bucket
+StagingS3 = _StagingS3()
+
+class _StagingGS(ssds.Staging):
+    blobstore = GSBlobStore()
+    bucket = _gs_staging_bucket
+StagingGS = _StagingGS()
 
 class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_upload(self):
@@ -51,13 +62,11 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             submission_id = f"{uuid4()}"
             submission_name = "this_is_a_test_submission"
             with self.subTest("aws"):
-                with ssds.Staging.override(S3BlobStore(), _s3_staging_bucket):
-                    for ssds_key in ssds.Staging.upload(root, submission_id, submission_name):
-                        print(ssds.Staging.compose_blobstore_url(ssds_key))
+                for ssds_key in StagingS3.upload(root, submission_id, submission_name):
+                    print(StagingS3.compose_blobstore_url(ssds_key))
             with self.subTest("gcp"):
-                with ssds.Staging.override(GSBlobStore(), _gs_staging_bucket):
-                    for ssds_key in ssds.Staging.upload(root, submission_id, submission_name):
-                        print(ssds.Staging.compose_blobstore_url(ssds_key))
+                for ssds_key in StagingGS.upload(root, submission_id, submission_name):
+                    print(StagingGS.compose_blobstore_url(ssds_key))
 
     def test_upload_name_length_error(self):
         with tempfile.TemporaryDirectory() as dirname:
@@ -68,15 +77,13 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             submission_id = f"{uuid4()}"
             submission_name = "a" * ssds.MAX_KEY_LENGTH
             with self.subTest("aws"):
-                with ssds.Staging.override(S3BlobStore(), _s3_staging_bucket):
-                    with self.assertRaises(ValueError):
-                        for _ in ssds.Staging.upload(root, submission_id, submission_name):
-                            pass
+                with self.assertRaises(ValueError):
+                    for _ in StagingS3.upload(root, submission_id, submission_name):
+                        pass
             with self.subTest("gcp"):
-                with ssds.Staging.override(GSBlobStore(), _gs_staging_bucket):
-                    with self.assertRaises(ValueError):
-                        for _ in ssds.Staging.upload(root, submission_id, submission_name):
-                            pass
+                with self.assertRaises(ValueError):
+                    for _ in StagingGS.upload(root, submission_id, submission_name):
+                        pass
 
     def test_upload_name_collisions(self):
         with tempfile.TemporaryDirectory() as dirname:
@@ -88,20 +95,20 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             submission_name = None
             with self.subTest("Must provide name for new submission"):
                 with self.assertRaises(ValueError):
-                    for _ in ssds.Staging.upload(root, submission_id, submission_name):
+                    for _ in StagingS3.upload(root, submission_id, submission_name):
                         pass
             with self.subTest("Should succeed with a name"):
                 submission_name = "name_collision_test_submission"
-                for ssds_key in ssds.Staging.upload(root, submission_id, submission_name):
-                    print(ssds.Staging.compose_blobstore_url(ssds_key))
+                for ssds_key in StagingS3.upload(root, submission_id, submission_name):
+                    print(StagingS3.compose_blobstore_url(ssds_key))
             with self.subTest("Should raise if provided name collides with existing name"):
                 submission_name = "name_collision_test_submission_wrong_name"
                 with self.assertRaises(ValueError):
-                    for ssds_key in ssds.Staging.upload(root, submission_id, submission_name):
+                    for ssds_key in StagingS3.upload(root, submission_id, submission_name):
                         pass
             with self.subTest("Submitting submission again should succeed while omitting name"):
-                for ssds_key in ssds.Staging.upload(root, submission_id):
-                    print(ssds.Staging.compose_blobstore_url(ssds_key))
+                for ssds_key in StagingS3.upload(root, submission_id):
+                    print(StagingS3.compose_blobstore_url(ssds_key))
 
 
 class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
