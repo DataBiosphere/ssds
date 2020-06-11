@@ -47,7 +47,14 @@ class SSDS:
         return name
 
     @classmethod
-    def upload(cls, src: str, submission_id: str, name: typing.Optional[str]=None):
+    def upload(cls,
+               root: str,
+               submission_id: str,
+               name: typing.Optional[str]=None) -> typing.Generator[str, None, None]:
+        """
+        Upload files from root directory and yield ssds_key for each file.
+        This returns a generator that must be iterated for uploads to occur.
+        """
         existing_name = cls.get_submission_name(submission_id)
         if not name:
             if not existing_name:
@@ -55,7 +62,7 @@ class SSDS:
             name = existing_name
         elif existing_name and existing_name != name:
             raise ValueError("Cannot update name of existing submission")
-        for ssds_key in cls._upload_local_tree(src, submission_id, name):
+        for ssds_key in cls._upload_local_tree(root, submission_id, name):
             yield ssds_key
 
     @classmethod
