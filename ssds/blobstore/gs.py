@@ -11,10 +11,6 @@ from ssds.blobstore.s3 import get_s3_multipart_chunk_size
 from ssds.blobstore import BlobStore
 
 
-# Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
-warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
-
-
 class GSBlobStore(BlobStore):
     schema = "gs://"
 
@@ -37,6 +33,8 @@ class GSBlobStore(BlobStore):
 def _client():
     if not os.environ.get('GOOGLE_CLOUD_PROJECT'):
         raise RuntimeError("Please set the GOOGLE_CLOUD_PROJECT environment variable")
+    # Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
+    warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
     return Client()
 
 def _upload_oneshot(filepath: str, bucket: str, key: str):
