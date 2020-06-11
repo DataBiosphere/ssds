@@ -20,7 +20,8 @@ class SSDS:
         prev_submission_id = ""
         for key in listing:
             try:
-                submission_id, parts = key.split("--", 1)
+                ssds_key = key.strip(f"{cls.prefix}/")
+                submission_id, parts = ssds_key.split("--", 1)
                 submission_name, _ = parts.split("/", 1)
             except ValueError:
                 continue
