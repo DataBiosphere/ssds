@@ -1,8 +1,8 @@
 import os
-import types
 import typing
 
-from ssds import s3, gs
+from ssds.blobstore import BlobStore
+from ssds.blobstore.s3 import S3BlobStore
 
 
 MAX_KEY_LENGTH = 1024  # this is the maximum length for S3 and GS object names
@@ -10,7 +10,7 @@ MAX_KEY_LENGTH = 1024  # this is the maximum length for S3 and GS object names
 # S3 docs: https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html
 
 class SSDS:
-    blobstore: typing.Optional[types.ModuleType] = None
+    blobstore: typing.Optional[BlobStore] = None
     bucket: typing.Optional[str] = None
     prefix: typing.Optional[str] = None
     _name_delimeter = "--"  # Not using "/" as name delimeter produces friendlier `aws s3` listing
@@ -32,7 +32,7 @@ class SSDS:
 
     @classmethod
     def list_submission(cls, submission_id: str):
-        for key in cls.blobstore.list(cls.bucket, f"{cls.prefix}/{submission_id}"):  # type: ignore
+        for key in cls.blobstore.list(cls.bucket, f"{cls.prefix}/{submission_id}"):
             ssds_key = key.strip(f"{cls.prefix}/")
             yield ssds_key
 
@@ -58,12 +58,12 @@ class SSDS:
                                  f"Use a shorter submission name")
         for filepath, ssds_key in zip(filepaths, ssds_keys):
             dst_key = f"{cls.prefix}/{ssds_key}"
-            cls.blobstore.upload_object(filepath, cls.bucket, dst_key)  # type: ignore
+            cls.blobstore.upload_object(filepath, cls.bucket, dst_key)
             yield ssds_key
 
     @classmethod
     def compose_blobstore_url(cls, ssds_key: str):
-        return f"{cls.blobstore.schema}{cls.bucket}/{cls.prefix}/{ssds_key}"  # type: ignore
+        return f"{cls.blobstore.schema}{cls.bucket}/{cls.prefix}/{ssds_key}"
 
     @classmethod
     def override(cls, blobstore=None, bucket=None, prefix=None):
@@ -87,7 +87,7 @@ class SSDS:
         return _ConfigOverride()
 
 class Staging(SSDS):
-    blobstore = s3
+    blobstore = S3BlobStore()
     bucket = "human-pangenomics"
     prefix = "submissions"
 
