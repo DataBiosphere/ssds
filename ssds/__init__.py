@@ -85,7 +85,7 @@ class SSDS:
 
 class Staging(SSDS):
     blobstore: typing.Optional[BlobStore] = S3BlobStore()
-    bucket = "human-pangenomics"
+    bucket = "org-hpp-ssds-staging-test"
 
 class Release(SSDS):
     def upload(self, *args, **kargs):
