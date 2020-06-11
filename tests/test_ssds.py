@@ -50,10 +50,12 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             submission_name = "this_is_a_test_submission"
             with self.subTest("aws"):
                 with ssds.Staging.override(ssds.s3, _s3_staging_bucket):
-                    ssds.Staging.upload(root, submission_id, submission_name)
+                    for ssds_key in ssds.Staging.upload(root, submission_id, submission_name):
+                        print(ssds.Staging.compose_blobstore_url(ssds_key))
             with self.subTest("gcp"):
                 with ssds.Staging.override(ssds.gs, _gs_staging_bucket):
-                    ssds.Staging.upload(root, submission_id, submission_name)
+                    for ssds_key in ssds.Staging.upload(root, submission_id, submission_name):
+                        print(ssds.Staging.compose_blobstore_url(ssds_key))
 
     def test_upload_name_length_error(self):
         with tempfile.TemporaryDirectory() as dirname:
@@ -66,11 +68,13 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             with self.subTest("aws"):
                 with ssds.Staging.override(ssds.s3, _s3_staging_bucket):
                     with self.assertRaises(ValueError):
-                        ssds.Staging.upload(root, submission_id, submission_name)
+                        for _ in ssds.Staging.upload(root, submission_id, submission_name):
+                            pass
             with self.subTest("gcp"):
                 with ssds.Staging.override(ssds.gs, _gs_staging_bucket):
                     with self.assertRaises(ValueError):
-                        ssds.Staging.upload(root, submission_id, submission_name)
+                        for _ in ssds.Staging.upload(root, submission_id, submission_name):
+                            pass
 
 
 class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
