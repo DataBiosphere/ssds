@@ -12,7 +12,7 @@ MAX_KEY_LENGTH = 1024  # this is the maximum length for S3 and GS object names
 class SSDS:
     blobstore: typing.Optional[BlobStore] = None
     bucket: typing.Optional[str] = None
-    prefix: typing.Optional[str] = None
+    prefix = "submissions"
     _name_delimeter = "--"  # Not using "/" as name delimeter produces friendlier `aws s3` listing
 
     def list(self):
@@ -107,7 +107,6 @@ class _Staging(SSDS):
     blobstore = S3BlobStore()
     # bucket = "human-pangenomics"
     bucket = "org-hpp-ssds-staging-test"
-    prefix = "submissions"
 Staging = _Staging()
 
 class _Release(SSDS):
