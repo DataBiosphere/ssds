@@ -14,6 +14,7 @@ with open("README.md") as fh:
 def get_version():
     filepath = os.path.join(os.path.dirname(__file__), "ssds", "version.py")
     if os.path.isfile(filepath):
+        # In source distributions or builds, version is available in the generated ssds/version.py file
         with open(filepath) as fh:
             version = dict()
             exec(fh.read().strip(), version)
