@@ -43,13 +43,13 @@ This version of the ssds can be installed with `pip install git+https://github.c
 
 Initially the bucket is empty, so we should expect no submissions to be listed:
 ```
-(ai) green-beret ~>ssds staging list
-(ai) green-beret ~>
+(hpp) ssds staging list
+(hpp) 
 ```
 
-Let's list the directory we intend to submit
+Lets list the directory we intend to submit
 ```
-(ai) green-beret ~>find thousand_primes/
+(hpp) find thousand_primes/
 thousand_primes/
 thousand_primes/chromosomes_higher_than_2
 thousand_primes/chromosomes_higher_than_2/ALL.chr13.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
@@ -59,7 +59,7 @@ thousand_primes/ALL.chr2.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotyp
 
 Now make a submission using the submission id `4ceefe63-f7b3-495f-9c9c-27f0946fe41e`
 ```
-(ai) green-beret ~>ssds staging upload --submission-id 4ceefe63-f7b3-495f-9c9c-27f0946fe41e --name this-is-our-first-submission thousand_primes
+(hpp) ssds staging upload --submission-id 4ceefe63-f7b3-495f-9c9c-27f0946fe41e --name this-is-our-first-submission thousand_primes
 s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/ALL.chr2.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
 s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/chromosomes_higher_than_2/ALL.chr13.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
 s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/chromosomes_higher_than_2/ALL.chr17.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
@@ -67,13 +67,13 @@ s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e-
 
 Try listing all submissions again:
 ```
-(ai) green-beret ~>ssds staging list
+(hpp) ssds staging list
 4ceefe63-f7b3-495f-9c9c-27f0946fe41e this-is-our-first-submission
 ```
 
 List the contents of the submission
 ```
-(ai) green-beret ~>ssds staging list-submission --submission-id 4ceefe63-f7b3-495f-9c9c-27f0946fe41e
+(hpp) ssds staging list-submission --submission-id 4ceefe63-f7b3-495f-9c9c-27f0946fe41e
 s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/ALL.chr2.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
 s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/chromosomes_higher_than_2/ALL.chr13.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
 s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/chromosomes_higher_than_2/ALL.chr17.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
@@ -81,14 +81,14 @@ s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e-
 
 Add to the submission (note the `--name` argument has been omitted. Submissions cannot be renamed!)
 ```
-(ai) green-beret ~>ssds staging upload --submission-id 4ceefe63-f7b3-495f-9c9c-27f0946fe41e more_thousand_primes
+(hpp) ssds staging upload --submission-id 4ceefe63-f7b3-495f-9c9c-27f0946fe41e more_thousand_primes
 s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/foo
 s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/bar
 ```
 
 And list the contents again
 ```
-(ai) green-beret ~>ssds staging list-submission --submission-id 4ceefe63-f7b3-495f-9c9c-27f0946fe41e
+(hpp) ssds staging list-submission --submission-id 4ceefe63-f7b3-495f-9c9c-27f0946fe41e
 s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/ALL.chr2.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
 s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/bar
 s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/chromosomes_higher_than_2/ALL.chr13.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
@@ -98,30 +98,33 @@ s3://org-hpp-ssds-staging-test/submissions/4ceefe63-f7b3-495f-9c9c-27f0946fe41e-
 
 Make a second submission:
 ```
-(ai) green-beret ~>ssds staging upload --submission-id 9b75ea9b-bfce-42f3-a639-745e60ca7ff1 --name second-submission more_thousand_primes
+(hpp) ssds staging upload --submission-id 9b75ea9b-bfce-42f3-a639-745e60ca7ff1 --name second-submission more_thousand_primes
 s3://org-hpp-ssds-staging-test/submissions/9b75ea9b-bfce-42f3-a639-745e60ca7ff1--second-submission/foo
 s3://org-hpp-ssds-staging-test/submissions/9b75ea9b-bfce-42f3-a639-745e60ca7ff1--second-submission/bar
 ```
 
 List all submissions again
 ```
-(ai) green-beret ~>ssds staging list
+(hpp) ssds staging list
 4ceefe63-f7b3-495f-9c9c-27f0946fe41e this-is-our-first-submission
 9b75ea9b-bfce-42f3-a639-745e60ca7ff1 second-submission
 ```
 
 Use the aws cli to list the bucket:
+NOTE: you will see a lot of folders for existing samples, along with the 'submissions' directory where your uploads should be.
 ```
-(ai) green-beret ~>aws s3 ls s3://org-hpp-ssds-staging-test
+(hpp) aws s3 ls s3://
                            PRE submissions/
 
-(ai) green-beret ~>aws s3 ls s3://org-hpp-ssds-staging-test/submissions/
+(hpp) aws s3 ls s3://submissions/
                            PRE 4ceefe63-f7b3-495f-9c9c-27f0946fe41e--this-is-our-first-submission/
                            PRE 9b75ea9b-bfce-42f3-a639-745e60ca7ff1--second-submission/
 
-(ai) green-beret ~>aws s3 ls --recursive s3://org-hpp-ssds-staging-test/submissions/9b75ea9b
+(hpp) aws s3 ls --recursive s3://org-hpp-ssds-staging-test/submissions/9b75ea9b
 2020-06-11 10:52:11          0 submissions/9b75ea9b-bfce-42f3-a639-745e60ca7ff1--second-submission/bar
 2020-06-11 10:52:11          0 submissions/9b75ea9b-bfce-42f3-a639-745e60ca7ff1--second-submission/foo
 ```
 
 Currently the ssds CLI does not provide functionality for either partial or full deletions.
+
+If you have any questions or comments, please contact Brian Hannafious (bhannafi@ucsc.edu) or Miten Jain (miten@soe.ucsc.edu).
