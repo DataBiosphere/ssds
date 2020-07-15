@@ -25,3 +25,6 @@ class BlobStore:
 
     def get(self, bucket_name: str, key: str) -> bytes:
         raise NotImplementedError()
+
+    def put(self, bucket_name: str, key: str, data: bytes):
+        raise NotImplementedError()

@@ -179,6 +179,11 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
             data = GSBlobStore().get(_gs_staging_bucket, key)
             self.assertEqual(data, expected_data)
 
+    def _test_put(self):
+        """
+        This is implicitly tested during `TestSSDS`.
+        """
+
     def _put_s3_obj(self, bucket, key, data):
         blob = ssds.aws.resource("s3").Bucket(bucket).Object(key)
         blob.upload_fileobj(io.BytesIO(data))
