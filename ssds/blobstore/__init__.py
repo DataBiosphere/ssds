@@ -1,4 +1,6 @@
-import typing
+from typing import (
+    Optional,
+)
 
 MiB = 1024 ** 2
 
@@ -13,10 +15,13 @@ AWS_MAX_MULTIPART_COUNT = 10000
 
 
 class BlobStore:
-    schema: typing.Optional[str] = None
+    schema: Optional[str] = None
 
     def upload_object(self, filepath: str, bucket: str, key: str):
         raise NotImplementedError()
 
     def list(self, bucket_name: str, prefix=""):
+        raise NotImplementedError()
+
+    def get(self, bucket_name: str, key: str) -> bytes:
         raise NotImplementedError()

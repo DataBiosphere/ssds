@@ -29,6 +29,12 @@ class GSBlobStore(BlobStore):
         for blob in _client().bucket(bucket_name).list_blobs(prefix=prefix):
             yield blob.name
 
+    def get(self, bucket_name: str, key: str) -> bytes:
+        blob = _client().bucket(bucket_name).get_blob(key)
+        fileobj = io.BytesIO()
+        blob.download_to_file(fileobj)
+        return fileobj.getvalue()
+
 @lru_cache()
 def _client():
     if not os.environ.get('GOOGLE_CLOUD_PROJECT'):

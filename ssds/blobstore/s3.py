@@ -1,6 +1,9 @@
 import io
 import os
-import typing
+from contextlib import closing
+from typing import (
+    BinaryIO,
+)
 from math import ceil
 
 from ssds import aws, checksum
@@ -23,6 +26,10 @@ class S3BlobStore(BlobStore):
     def list(self, bucket: str, prefix=""):
         for item in aws.resource("s3").Bucket(bucket).objects.filter(Prefix=prefix):
             yield item.key
+
+    def get(self, bucket_name: str, key: str) -> bytes:
+        with closing(aws.resource("s3").Bucket(bucket_name).Object(key).get()['Body']) as fh:
+            return fh.read()
 
 def get_s3_multipart_chunk_size(filesize: int):
     """Returns the chunk size of the S3 multipart object, given a file's size."""
@@ -62,7 +69,7 @@ def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int):
     assert composite_etag == aws.resource("s3").Bucket(bucket).Object(key).e_tag.strip("\"")
     return s3_etag, info['gs_crc32c']
 
-def _copy_parts(mpu: str, bucket: str, key: str, fileobj: typing.BinaryIO, part_size: int):
+def _copy_parts(mpu: str, bucket: str, key: str, fileobj: BinaryIO, part_size: int):
     part_number = 0
     parts = []
     crc32c = checksum.crc32c(b"")
