@@ -2,13 +2,15 @@ import io
 import os
 import warnings
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+from math import ceil
 
 import gs_chunked_io as gscio
 from google.cloud.storage import Client
 
 from ssds import checksum
 from ssds.blobstore.s3 import get_s3_multipart_chunk_size
-from ssds.blobstore import BlobStore
+from ssds.blobstore import BlobStore, AsyncPartIterator
 
 
 class GSBlobStore(BlobStore):
@@ -50,6 +52,20 @@ class GSBlobStore(BlobStore):
 
     def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
         return _client().bucket(bucket_name).get_blob(key).crc32c
+
+class GSAsyncPartIterator(AsyncPartIterator):
+    def __init__(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None):
+        self._blob = _client().bucket(bucket_name).get_blob(key)
+        self.size = self._blob.size
+        self.chunk_size = get_s3_multipart_chunk_size(self.size)
+        self.number_of_parts = ceil(self.size / self.chunk_size)
+        self._executor = executor
+
+    def __iter__(self):
+        for chunk_number, data in gscio.AsyncReader.for_each_chunk_async(self._blob,
+                                                                         self.chunk_size,
+                                                                         executor=self._executor):
+            yield chunk_number, data
 
 @lru_cache()
 def _client():

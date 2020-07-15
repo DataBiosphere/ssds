@@ -6,6 +6,7 @@ import unittest
 import tempfile
 from uuid import uuid4
 from random import randint
+from math import ceil
 
 from google.cloud import storage
 
@@ -13,8 +14,8 @@ pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noq
 sys.path.insert(0, pkg_root)  # noqa
 
 import ssds
-from ssds.blobstore.s3 import S3BlobStore
-from ssds.blobstore.gs import GSBlobStore
+from ssds.blobstore.s3 import S3BlobStore, S3AsyncPartIterator, get_s3_multipart_chunk_size
+from ssds.blobstore.gs import GSBlobStore, GSAsyncPartIterator
 from tests import infra
 
 
@@ -144,7 +145,6 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
 class TestS3Multipart(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_get_s3_multipart_chunk_size(self):
         from ssds.blobstore import AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB
-        from ssds.blobstore.s3 import get_s3_multipart_chunk_size
         with self.subTest("file size smaller than AWS_MAX_MULTIPART_COUNT * AWS_MIN_CHUNK_SIZE"):
             sz = AWS_MIN_CHUNK_SIZE * 2.234
             self.assertEqual(AWS_MIN_CHUNK_SIZE, get_s3_multipart_chunk_size(sz))
@@ -195,6 +195,24 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
             blob.reload()
             expected_checksum = blob.crc32c
             self.assertEqual(expected_checksum, GSBlobStore().cloud_native_checksum(_gs_staging_bucket, key))
+
+    def test_part_iterators(self):
+        key = f"{uuid4()}"
+        expected_data = os.urandom(1024 * 1024 * 130)
+        chunk_size = get_s3_multipart_chunk_size(len(expected_data))
+        number_of_parts = ceil(len(expected_data) / chunk_size)
+        expected_parts = [expected_data[i * chunk_size:(i + 1) * chunk_size]
+                          for i in range(number_of_parts)]
+        tests = [("aws", _s3_staging_bucket, self._put_s3_obj, S3AsyncPartIterator),
+                 ("gcp", _gs_staging_bucket, self._put_gs_obj, GSAsyncPartIterator)]
+        for replica, bucket_name, uploade, part_iterator in tests:
+            with self.subTest(replica):
+                uploade(bucket_name, key, expected_data)
+                count = 0
+                for part_number, data in part_iterator(bucket_name, key):
+                    self.assertEqual(expected_parts[part_number], data)
+                    count += 1
+                self.assertEqual(number_of_parts, count)
 
     def _put_s3_obj(self, bucket, key, data):
         blob = ssds.aws.resource("s3").Bucket(bucket).Object(key)

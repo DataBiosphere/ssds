@@ -1,13 +1,15 @@
 import io
 import os
 from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import (
+    Tuple,
     BinaryIO,
 )
 from math import ceil
 
 from ssds import aws, checksum
-from ssds.blobstore import MiB, AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, BlobStore
+from ssds.blobstore import MiB, AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, BlobStore, AsyncPartIterator
 
 
 class S3BlobStore(BlobStore):
@@ -48,6 +50,30 @@ class S3BlobStore(BlobStore):
     def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
         blob = aws.resource("s3").Bucket(bucket_name).Object(key)
         return blob.e_tag.strip("\"")
+
+class S3AsyncPartIterator(AsyncPartIterator):
+    def __init__(self, bucket_name, key, executor: ThreadPoolExecutor=None):
+        self._blob = aws.resource("s3").Bucket(bucket_name).Object(key)
+        self.size = self._blob.content_length
+        self.chunk_size = get_s3_multipart_chunk_size(self.size)
+        self.number_of_parts = ceil(self.size / self.chunk_size)
+        self._executor = executor or ThreadPoolExecutor(max_workers=4)
+
+    def __iter__(self):
+        if 1 == self.number_of_parts:
+            yield self._get_part(0)
+        else:
+            futures = list()
+            for part_number in range(self.number_of_parts):
+                futures.append(self._executor.submit(self._get_part, part_number))
+            for f in as_completed(futures):
+                yield f.result()
+
+    def _get_part(self, part_number: int) -> Tuple[int, bytes]:
+        offset = part_number * self.chunk_size
+        byte_range = f"bytes={offset}-{offset + self.chunk_size - 1}"
+        data = self._blob.get(Range=byte_range)['Body'].read()
+        return part_number, data
 
 def get_s3_multipart_chunk_size(filesize: int):
     """Returns the chunk size of the S3 multipart object, given a file's size."""
