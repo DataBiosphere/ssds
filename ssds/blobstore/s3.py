@@ -17,11 +17,21 @@ class S3BlobStore(BlobStore):
         size = os.stat(filepath).st_size
         chunk_size = get_s3_multipart_chunk_size(size)
         if chunk_size >= size:
-            s3_etag, gs_crc32c = _upload_oneshot(filepath, bucket, key)
+            s3_etag, gs_crc32c = self._upload_oneshot(filepath, bucket, key)
         else:
             s3_etag, gs_crc32c = _upload_multipart(filepath, bucket, key, chunk_size)
         tags = dict(TagSet=[dict(Key="SSDS_MD5", Value=s3_etag), dict(Key="SSDS_CRC32C", Value=gs_crc32c)])
         aws.client("s3").put_object_tagging(Bucket=bucket, Key=key, Tagging=tags)
+
+    def _upload_oneshot(self, filepath: str, bucket: str, key: str):
+        blob = aws.resource("s3").Bucket(bucket).Object(key)
+        with open(filepath, "rb") as fh:
+            data = fh.read()
+        gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
+        s3_etag = checksum.md5(data).hexdigest()
+        self.put(bucket, key, data)
+        assert s3_etag == blob.e_tag.strip("\"")
+        return s3_etag, gs_crc32c
 
     def list(self, bucket: str, prefix=""):
         for item in aws.resource("s3").Bucket(bucket).objects.filter(Prefix=prefix):
@@ -30,6 +40,10 @@ class S3BlobStore(BlobStore):
     def get(self, bucket_name: str, key: str) -> bytes:
         with closing(aws.resource("s3").Bucket(bucket_name).Object(key).get()['Body']) as fh:
             return fh.read()
+
+    def put(self, bucket_name: str, key: str, data: bytes):
+        blob = aws.resource("s3").Bucket(bucket_name).Object(key)
+        blob.upload_fileobj(io.BytesIO(data))
 
 def get_s3_multipart_chunk_size(filesize: int):
     """Returns the chunk size of the S3 multipart object, given a file's size."""
