@@ -45,6 +45,10 @@ class S3BlobStore(BlobStore):
         blob = aws.resource("s3").Bucket(bucket_name).Object(key)
         blob.upload_fileobj(io.BytesIO(data))
 
+    def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
+        blob = aws.resource("s3").Bucket(bucket_name).Object(key)
+        return blob.e_tag.strip("\"")
+
 def get_s3_multipart_chunk_size(filesize: int):
     """Returns the chunk size of the S3 multipart object, given a file's size."""
     if filesize <= AWS_MAX_MULTIPART_COUNT * AWS_MIN_CHUNK_SIZE:

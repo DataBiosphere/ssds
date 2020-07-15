@@ -184,14 +184,28 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         This is implicitly tested during `TestSSDS`.
         """
 
+    def test_cloud_native_checksums(self):
+        key = f"{uuid4()}"
+        with self.subTest("aws"):
+            blob = self._put_s3_obj(_s3_staging_bucket, key, os.urandom(1))
+            expected_checksum = blob.e_tag.strip("\"")
+            self.assertEqual(expected_checksum, S3BlobStore().cloud_native_checksum(_s3_staging_bucket, key))
+        with self.subTest("gcp"):
+            blob = self._put_gs_obj(_gs_staging_bucket, key, os.urandom(1))
+            blob.reload()
+            expected_checksum = blob.crc32c
+            self.assertEqual(expected_checksum, GSBlobStore().cloud_native_checksum(_gs_staging_bucket, key))
+
     def _put_s3_obj(self, bucket, key, data):
         blob = ssds.aws.resource("s3").Bucket(bucket).Object(key)
         blob.upload_fileobj(io.BytesIO(data))
+        return blob
 
     def _put_gs_obj(self, bucket, key, data):
         from ssds.blobstore import gs
         blob = gs._client().bucket(bucket).blob(key)
         blob.upload_from_file(io.BytesIO(data))
+        return blob
 
 if __name__ == '__main__':
     unittest.main()
