@@ -48,7 +48,7 @@ class GSBlobStore(BlobStore):
         blob = _client().bucket(bucket_name).blob(key)
         blob.upload_from_file(io.BytesIO(data))
 
-    def cloud_native_checksum(self, bucket_name: str, key: str):
+    def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
         return _client().bucket(bucket_name).get_blob(key).crc32c
 
 @lru_cache()
