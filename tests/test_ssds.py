@@ -205,9 +205,9 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                           for i in range(number_of_parts)]
         tests = [("aws", _s3_staging_bucket, self._put_s3_obj, S3AsyncPartIterator),
                  ("gcp", _gs_staging_bucket, self._put_gs_obj, GSAsyncPartIterator)]
-        for replica, bucket_name, uploade, part_iterator in tests:
+        for replica, bucket_name, upload, part_iterator in tests:
             with self.subTest(replica):
-                uploade(bucket_name, key, expected_data)
+                upload(bucket_name, key, expected_data)
                 count = 0
                 for part_number, data in part_iterator(bucket_name, key):
                     self.assertEqual(expected_parts[part_number], data)
