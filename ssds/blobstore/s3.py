@@ -2,11 +2,13 @@ import io
 import os
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import (
-    Tuple,
-    BinaryIO,
-)
 from math import ceil
+from typing import (
+    Any,
+    List,
+    Tuple,
+    Optional,
+)
 
 from ssds import aws, checksum
 from ssds.blobstore import MiB, AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, BlobStore, AsyncPartIterator
@@ -95,42 +97,56 @@ def _upload_oneshot(filepath: str, bucket: str, key: str):
     return s3_etag, gs_crc32c
 
 def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int):
-    mpu = aws.client("s3").create_multipart_upload(Bucket=bucket, Key=key)['UploadId']
-    with open(filepath, "rb") as fh:
-        try:
-            info = _copy_parts(mpu, bucket, key, fh, part_size)
-        except Exception:
-            aws.client("s3").abort_multipart_upload(Bucket=bucket, Key=key, UploadId=mpu)
-            raise
-    aws.client("s3").complete_multipart_upload(Bucket=bucket,
-                                               Key=key,
-                                               MultipartUpload=dict(Parts=info['parts']),
-                                               UploadId=mpu)
-    s3_etag = aws.resource("s3").Bucket(bucket).Object(key).e_tag.strip("\"")
-    bin_md5 = b"".join([checksum.binascii.unhexlify(part['ETag'].strip("\""))
-                        for part in info['parts']])
-    composite_etag = checksum.md5(bin_md5).hexdigest() + "-" + str(len(info['parts']))
-    assert composite_etag == aws.resource("s3").Bucket(bucket).Object(key).e_tag.strip("\"")
-    return s3_etag, info['gs_crc32c']
+    with MultipartUploader(bucket, key) as uploader:
+        part_number = 0
+        crc32c = checksum.crc32c(b"")
+        with open(filepath, "rb") as fh:
+            while True:
+                data = fh.read(part_size)
+                if not data:
+                    break
+                crc32c.update(data)
+                uploader.put_part(part_number, data)
+                part_number += 1
+    return uploader.s3_etag, crc32c.google_storage_crc32c()
 
-def _copy_parts(mpu: str, bucket: str, key: str, fileobj: BinaryIO, part_size: int):
-    part_number = 0
-    parts = []
-    crc32c = checksum.crc32c(b"")
-    while True:
-        data = fileobj.read(part_size)
-        if not data:
-            break
-        part_number += 1
+class MultipartUploader:
+    def __init__(self, bucket_name: str, key: str):
+        self.bucket_name = bucket_name
+        self.key = key
+        self.mpu = aws.client("s3").create_multipart_upload(Bucket=bucket_name, Key=key)['UploadId']
+        self.parts: List[Any] = list()
+        self.s3_etag: Optional[str] = None
+        self._closed = False
+
+    def put_part(self, part_number: int, data: bytes):
+        aws_part_number = part_number + 1
         resp = aws.client("s3").upload_part(
             Body=data,
-            Bucket=bucket,
-            Key=key,
-            PartNumber=part_number,
-            UploadId=mpu,
+            Bucket=self.bucket_name,
+            Key=self.key,
+            PartNumber=aws_part_number,
+            UploadId=self.mpu,
         )
         computed_etag = checksum.md5(data).hexdigest()
-        crc32c.update(data)
         assert computed_etag == resp['ETag'].strip("\"")
-        parts.append(dict(ETag=resp['ETag'], PartNumber=part_number))
-    return dict(gs_crc32c=crc32c.google_storage_crc32c(), parts=parts)
+        self.parts.append(dict(ETag=resp['ETag'], PartNumber=aws_part_number))
+
+    def close(self):
+        if not self._closed:
+            self._closed = True
+            aws.client("s3").complete_multipart_upload(Bucket=self.bucket_name,
+                                                       Key=self.key,
+                                                       MultipartUpload=dict(Parts=self.parts),
+                                                       UploadId=self.mpu)
+            bin_md5 = b"".join([checksum.binascii.unhexlify(part['ETag'].strip("\""))
+                                for part in self.parts])
+            composite_etag = checksum.md5(bin_md5).hexdigest() + "-" + str(len(self.parts))
+            assert composite_etag == aws.resource("s3").Bucket(self.bucket_name).Object(self.key).e_tag.strip("\"")
+            self.s3_etag = composite_etag
+
+    def __enter__(self, *args, **kwargs):
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        self.close()
