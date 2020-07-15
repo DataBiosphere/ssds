@@ -165,6 +165,28 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         self.assertEqual("s3://", S3BlobStore.schema)
         self.assertEqual("gs://", GSBlobStore.schema)
 
+    def test_get(self):
+        with self.subTest("aws"):
+            key = f"{uuid4()}"
+            expected_data = os.urandom(10)
+            self._put_s3_obj(_s3_staging_bucket, key, expected_data)
+            data = S3BlobStore().get(_s3_staging_bucket, key)
+            self.assertEqual(data, expected_data)
+        with self.subTest("gcp"):
+            key = f"{uuid4()}"
+            expected_data = os.urandom(10)
+            self._put_gs_obj(_s3_staging_bucket, key, expected_data)
+            data = GSBlobStore().get(_gs_staging_bucket, key)
+            self.assertEqual(data, expected_data)
+
+    def _put_s3_obj(self, bucket, key, data):
+        blob = ssds.aws.resource("s3").Bucket(bucket).Object(key)
+        blob.upload_fileobj(io.BytesIO(data))
+
+    def _put_gs_obj(self, bucket, key, data):
+        from ssds.blobstore import gs
+        blob = gs._client().bucket(bucket).blob(key)
+        blob.upload_from_file(io.BytesIO(data))
 
 if __name__ == '__main__':
     unittest.main()
