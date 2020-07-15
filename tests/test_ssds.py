@@ -7,7 +7,6 @@ import tempfile
 from math import ceil
 from uuid import uuid4
 from random import randint
-from math import ceil
 
 from google.cloud import storage
 
