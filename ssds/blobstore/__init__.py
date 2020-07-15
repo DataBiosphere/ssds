@@ -1,6 +1,7 @@
 from typing import (
     Optional,
 )
+from concurrent.futures import ThreadPoolExecutor
 
 MiB = 1024 ** 2
 
@@ -30,4 +31,13 @@ class BlobStore:
         raise NotImplementedError()
 
     def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
+        raise NotImplementedError()
+
+class AsyncPartIterator:
+    def __init__(self, bucket_name, key, executor: ThreadPoolExecutor=None):
+        self.size = -1
+        self.chunk_size = -1
+        self.number_of_parts = -1
+
+    def __iter__(self):
         raise NotImplementedError()
