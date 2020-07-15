@@ -4,6 +4,7 @@ import os
 import sys
 import unittest
 import tempfile
+from math import ceil
 from uuid import uuid4
 from random import randint
 from math import ceil
@@ -14,6 +15,7 @@ pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noq
 sys.path.insert(0, pkg_root)  # noqa
 
 import ssds
+from ssds.blobstore import AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB
 from ssds.blobstore.s3 import S3BlobStore, S3AsyncPartIterator, get_s3_multipart_chunk_size
 from ssds.blobstore.gs import GSBlobStore, GSAsyncPartIterator
 from tests import infra
@@ -144,7 +146,6 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
 
 class TestS3Multipart(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_get_s3_multipart_chunk_size(self):
-        from ssds.blobstore import AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB
         with self.subTest("file size smaller than AWS_MAX_MULTIPART_COUNT * AWS_MIN_CHUNK_SIZE"):
             sz = AWS_MIN_CHUNK_SIZE * 2.234
             self.assertEqual(AWS_MIN_CHUNK_SIZE, get_s3_multipart_chunk_size(sz))
@@ -224,6 +225,18 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         blob = gs._client().bucket(bucket).blob(key)
         blob.upload_from_file(io.BytesIO(data))
         return blob
+
+    def test_s3_multipart_upload(self):
+        expected_data = os.urandom(1024**2 * 130)
+        chunk_size = get_s3_multipart_chunk_size(len(expected_data))
+        number_of_chunks = ceil(len(expected_data) / chunk_size)
+        key = f"{uuid4()}"
+        with ssds.blobstore.s3.MultipartUploader(_s3_staging_bucket, key) as uploader:
+            for i in range(number_of_chunks):
+                data = expected_data[i * chunk_size: (i + 1) * chunk_size]
+                uploader.put_part(i, data)
+        retrieved_data = ssds.aws.resource("s3").Bucket(_s3_staging_bucket).Object(key).get()['Body'].read()
+        self.assertEqual(expected_data, retrieved_data)
 
 if __name__ == '__main__':
     unittest.main()
