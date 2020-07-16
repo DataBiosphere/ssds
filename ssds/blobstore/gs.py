@@ -13,7 +13,7 @@ from google.cloud.storage import Client
 
 from ssds import checksum
 from ssds.blobstore.s3 import get_s3_multipart_chunk_size
-from ssds.blobstore import BlobStore, AsyncPartIterator, Part
+from ssds.blobstore import BlobStore, AsyncPartIterator, Part, MultipartWriter
 
 
 class GSBlobStore(BlobStore):
@@ -59,6 +59,9 @@ class GSBlobStore(BlobStore):
     def parts(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "GSAsyncPartIterator":
         return GSAsyncPartIterator(bucket_name, key, executor)
 
+    def multipart_writer(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "MultipartWriter":
+        return GSMultipartWriter(bucket_name, key, executor)
+
 class GSAsyncPartIterator(AsyncPartIterator):
     def __init__(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None):
         self._blob = _client().bucket(bucket_name).get_blob(key)
@@ -72,6 +75,17 @@ class GSAsyncPartIterator(AsyncPartIterator):
                                                                          self.chunk_size,
                                                                          executor=self._executor):
             yield Part(chunk_number, data)
+
+class GSMultipartWriter(MultipartWriter):
+    def __init__(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None):
+        bucket = _client().bucket(bucket_name)
+        self._writer = gscio.AsyncWriter(key, bucket, executor=executor)
+
+    def put_part(self, part: Part):
+        self._writer.put_part_async(part.number, part.data)
+
+    def close(self):
+        self._writer.close()
 
 @lru_cache()
 def _client():

@@ -13,7 +13,8 @@ from typing import (
 )
 
 from ssds import aws, checksum
-from ssds.blobstore import MiB, AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, BlobStore, AsyncPartIterator, Part
+from ssds.blobstore import (MiB, AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, BlobStore, AsyncPartIterator, Part,
+                            MultipartWriter)
 
 class S3BlobStore(BlobStore):
     schema = "s3://"
@@ -56,6 +57,9 @@ class S3BlobStore(BlobStore):
 
     def parts(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "S3AsyncPartIterator":
         return S3AsyncPartIterator(bucket_name, key, executor)
+
+    def multipart_writer(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "MultipartWriter":
+        return S3MultipartWriter(bucket_name, key)
 
 class S3AsyncPartIterator(AsyncPartIterator):
     parts_to_buffer = 2
@@ -101,7 +105,7 @@ def get_s3_multipart_chunk_size(filesize: int):
         return part_size_in_integer_megabytes
 
 def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int):
-    with MultipartUploader(bucket, key) as uploader:
+    with S3MultipartWriter(bucket, key) as uploader:
         part_number = 0
         crc32c = checksum.crc32c(b"")
         with open(filepath, "rb") as fh:
@@ -110,11 +114,11 @@ def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int):
                 if not data:
                     break
                 crc32c.update(data)
-                uploader.put_part(part_number, data)
+                uploader.put_part(Part(part_number, data))
                 part_number += 1
     return uploader.s3_etag, crc32c.google_storage_crc32c()
 
-class MultipartUploader:
+class S3MultipartWriter(MultipartWriter):
     def __init__(self, bucket_name: str, key: str):
         self.bucket_name = bucket_name
         self.key = key
@@ -123,22 +127,23 @@ class MultipartUploader:
         self.s3_etag: Optional[str] = None
         self._closed = False
 
-    def put_part(self, part_number: int, data: bytes):
-        aws_part_number = part_number + 1
+    def put_part(self, part: Part):
+        aws_part_number = part.number + 1
         resp = aws.client("s3").upload_part(
-            Body=data,
+            Body=part.data,
             Bucket=self.bucket_name,
             Key=self.key,
             PartNumber=aws_part_number,
             UploadId=self.mpu,
         )
-        computed_etag = checksum.md5(data).hexdigest()
+        computed_etag = checksum.md5(part.data).hexdigest()
         assert computed_etag == resp['ETag'].strip("\"")
         self.parts.append(dict(ETag=resp['ETag'], PartNumber=aws_part_number))
 
     def close(self):
         if not self._closed:
             self._closed = True
+            self.parts.sort(key=lambda item: item['PartNumber'])
             aws.client("s3").complete_multipart_upload(Bucket=self.bucket_name,
                                                        Key=self.key,
                                                        MultipartUpload=dict(Parts=self.parts),
@@ -148,9 +153,3 @@ class MultipartUploader:
             composite_etag = checksum.md5(bin_md5).hexdigest() + "-" + str(len(self.parts))
             assert composite_etag == aws.resource("s3").Bucket(self.bucket_name).Object(self.key).e_tag.strip("\"")
             self.s3_etag = composite_etag
-
-    def __enter__(self, *args, **kwargs):
-        return self
-
-    def __exit__(self, *args, **kwargs):
-        self.close()
