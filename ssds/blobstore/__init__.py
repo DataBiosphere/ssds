@@ -47,7 +47,10 @@ class AsyncPartIterator:
     def __init__(self, bucket_name, key, executor: ThreadPoolExecutor=None):
         self.size = -1
         self.chunk_size = -1
-        self.number_of_parts = -1
+        self._number_of_parts = -1
+
+    def __len__(self):
+        return self._number_of_parts
 
     def __iter__(self) -> Generator[Part, None, None]:
         raise NotImplementedError()

@@ -68,15 +68,15 @@ class S3AsyncPartIterator(AsyncPartIterator):
         self._blob = aws.resource("s3").Bucket(bucket_name).Object(key)
         self.size = self._blob.content_length
         self.chunk_size = get_s3_multipart_chunk_size(self.size)
-        self.number_of_parts = ceil(self.size / self.chunk_size)
+        self._number_of_parts = ceil(self.size / self.chunk_size)
         self._executor = executor or ThreadPoolExecutor(max_workers=4)
 
     def __iter__(self) -> Generator[Part, None, None]:
-        if 1 == self.number_of_parts:
+        if 1 == self._number_of_parts:
             yield self._get_part(0)
         else:
             futures: Set[Future] = set()
-            part_numbers = [part_number for part_number in range(self.number_of_parts)]
+            part_numbers = [part_number for part_number in range(self._number_of_parts)]
             while part_numbers or futures:
                 if len(futures) < self.parts_to_buffer:
                     number_of_parts_to_fetch = self.parts_to_buffer - len(futures)
