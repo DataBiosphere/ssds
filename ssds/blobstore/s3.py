@@ -1,8 +1,8 @@
 import io
 import os
+from math import ceil
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from math import ceil
 from typing import (
     Any,
     Set,
@@ -99,16 +99,6 @@ def get_s3_multipart_chunk_size(filesize: int):
         raw_part_size = ceil(filesize / AWS_MAX_MULTIPART_COUNT)
         part_size_in_integer_megabytes = ((raw_part_size + MiB - 1) // MiB) * MiB
         return part_size_in_integer_megabytes
-
-def _upload_oneshot(filepath: str, bucket: str, key: str):
-    blob = aws.resource("s3").Bucket(bucket).Object(key)
-    with open(filepath, "rb") as fh:
-        data = fh.read()
-    gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
-    s3_etag = checksum.md5(data).hexdigest()
-    blob.upload_fileobj(io.BytesIO(data))
-    assert s3_etag == blob.e_tag.strip("\"")
-    return s3_etag, gs_crc32c
 
 def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int):
     with MultipartUploader(bucket, key) as uploader:
