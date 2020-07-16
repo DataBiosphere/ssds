@@ -42,25 +42,7 @@ StagingGS = _StagingGS()
 class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_upload(self):
         with tempfile.TemporaryDirectory() as dirname:
-            root = os.path.join(dirname, "test_submission")
-            subdir1 = os.path.join(root, "subdir1")
-            subdir2 = os.path.join(root, "subdir2")
-            subsubdir = os.path.join(subdir1, "subsubdir")
-            os.mkdir(root)
-            os.mkdir(subdir1)
-            os.mkdir(subdir2)
-            os.mkdir(subsubdir)
-            for i in range(2):
-                with open(os.path.join(root, f"file{i}.dat"), "wb") as fh:
-                    fh.write(os.urandom(200))
-                with open(os.path.join(subdir1, f"file{i}.dat"), "wb") as fh:
-                    fh.write(os.urandom(200))
-                with open(os.path.join(subdir2, f"file{i}.dat"), "wb") as fh:
-                    fh.write(os.urandom(200))
-                with open(os.path.join(subsubdir, f"file{i}.dat"), "wb") as fh:
-                    fh.write(os.urandom(200))
-            with open(os.path.join(root, "large.dat"), "wb") as fh:
-                fh.write(os.urandom(1024 ** 2 * 160))
+            root = self._prepare_local_submission_dir(dirname)
             submission_id = f"{uuid4()}"
             submission_name = "this_is_a_test_submission"
             with self.subTest("aws"):
@@ -72,10 +54,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_upload_name_length_error(self):
         with tempfile.TemporaryDirectory() as dirname:
-            root = os.path.join(dirname, "test_submission")
-            os.mkdir(root)
-            with open(os.path.join(root, "file.dat"), "wb") as fh:
-                fh.write(os.urandom(200))
+            root = self._prepare_local_submission_dir(dirname, single_file=True)
             submission_id = f"{uuid4()}"
             submission_name = "a" * ssds.MAX_KEY_LENGTH
             with self.subTest("aws"):
@@ -89,10 +68,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_upload_name_collisions(self):
         with tempfile.TemporaryDirectory() as dirname:
-            root = os.path.join(dirname, "test_submission")
-            os.mkdir(root)
-            with open(os.path.join(root, "file.dat"), "wb") as fh:
-                fh.write(os.urandom(200))
+            root = self._prepare_local_submission_dir(dirname, single_file=True)
             submission_id = f"{uuid4()}"
             submission_name = None
             with self.subTest("Must provide name for new submission"):
@@ -112,6 +88,31 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                 for ssds_key in StagingS3.upload(root, submission_id):
                     print(StagingS3.compose_blobstore_url(ssds_key))
 
+    def _prepare_local_submission_dir(self, dirname: str, single_file=False) -> str:
+        root = os.path.join(dirname, "test_submission")
+        os.mkdir(root)
+        if single_file:
+            with open(os.path.join(root, "file.dat"), "wb") as fh:
+                fh.write(os.urandom(200))
+        else:
+            subdir1 = os.path.join(root, "subdir1")
+            subdir2 = os.path.join(root, "subdir2")
+            subsubdir = os.path.join(subdir1, "subsubdir")
+            os.mkdir(subdir1)
+            os.mkdir(subdir2)
+            os.mkdir(subsubdir)
+            for i in range(2):
+                with open(os.path.join(root, f"file{i}.dat"), "wb") as fh:
+                    fh.write(os.urandom(200))
+                with open(os.path.join(subdir1, f"file{i}.dat"), "wb") as fh:
+                    fh.write(os.urandom(200))
+                with open(os.path.join(subdir2, f"file{i}.dat"), "wb") as fh:
+                    fh.write(os.urandom(200))
+                with open(os.path.join(subsubdir, f"file{i}.dat"), "wb") as fh:
+                    fh.write(os.urandom(200))
+            with open(os.path.join(root, "large.dat"), "wb") as fh:
+                fh.write(os.urandom(1024 ** 2 * 160))
+        return root
 
 class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_crc32c(self):
