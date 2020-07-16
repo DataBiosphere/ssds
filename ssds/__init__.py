@@ -31,7 +31,7 @@ class SSDS:
 
     def list_submission(self, submission_id: str):
         for key in self.blobstore.list(self.bucket, f"{self.prefix}/{submission_id}"):
-            ssds_key = key.strip(f"{self.prefix}/")
+            ssds_key = key.replace(f"{self.prefix}/", "", 1)
             yield ssds_key
 
     def get_submission_name(self, submission_id: str):
