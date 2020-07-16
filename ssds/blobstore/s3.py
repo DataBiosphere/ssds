@@ -80,7 +80,7 @@ class S3AsyncPartIterator(AsyncPartIterator):
                     part_number, data = f.result()
                     futures.remove(f)
                     yield part_number, data
-                    break
+                    break  # Break out of inner loop to avoid waiting for `as_completed` to provide next future
 
     def _get_part(self, part_number: int) -> Tuple[int, bytes]:
         offset = part_number * self.chunk_size
