@@ -1,10 +1,11 @@
 import io
 import os
 from contextlib import closing
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from math import ceil
 from typing import (
     Any,
+    Set,
     List,
     Tuple,
     Optional,
@@ -54,6 +55,8 @@ class S3BlobStore(BlobStore):
         return blob.e_tag.strip("\"")
 
 class S3AsyncPartIterator(AsyncPartIterator):
+    parts_to_buffer = 2
+
     def __init__(self, bucket_name, key, executor: ThreadPoolExecutor=None):
         self._blob = aws.resource("s3").Bucket(bucket_name).Object(key)
         self.size = self._blob.content_length
@@ -65,11 +68,19 @@ class S3AsyncPartIterator(AsyncPartIterator):
         if 1 == self.number_of_parts:
             yield self._get_part(0)
         else:
-            futures = list()
-            for part_number in range(self.number_of_parts):
-                futures.append(self._executor.submit(self._get_part, part_number))
-            for f in as_completed(futures):
-                yield f.result()
+            futures: Set[Future] = set()
+            part_numbers = [part_number for part_number in range(self.number_of_parts)]
+            while part_numbers or futures:
+                if len(futures) < self.parts_to_buffer:
+                    number_of_parts_to_fetch = self.parts_to_buffer - len(futures)
+                    for part_number in part_numbers[:number_of_parts_to_fetch]:
+                        futures.add(self._executor.submit(self._get_part, part_number))
+                    part_numbers = part_numbers[number_of_parts_to_fetch:]
+                for f in as_completed(futures):
+                    part_number, data = f.result()
+                    futures.remove(f)
+                    yield part_number, data
+                    break  # Break out of inner loop to avoid waiting for `as_completed` to provide next future
 
     def _get_part(self, part_number: int) -> Tuple[int, bytes]:
         offset = part_number * self.chunk_size
