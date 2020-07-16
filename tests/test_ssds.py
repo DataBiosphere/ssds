@@ -88,6 +88,24 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                 for ssds_key in StagingS3.upload(root, submission_id):
                     print(StagingS3.compose_blobstore_url(ssds_key))
 
+    def test_sync(self):
+        tests = [("sync aws -> gcp", StagingS3, StagingGS),
+                 ("sync gcp -> aws", StagingGS, StagingS3)]
+        for test_name, src, dst in tests:
+            with self.subTest(test_name):
+                with tempfile.TemporaryDirectory() as dirname:
+                    root = self._prepare_local_submission_dir(dirname)
+                    submission_id = f"{uuid4()}"
+                    submission_name = "this_is_a_test_submission_for_sync"
+                    uploaded_keys = [ssds_key for ssds_key in src.upload(root, submission_id, submission_name)]
+                ssds.sync(submission_id, src, dst)
+                synced_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
+                self.assertEqual(sorted(uploaded_keys), sorted(synced_keys))
+                for ssds_key in synced_keys:
+                    a = src.blobstore.get(StagingS3.bucket, f"{StagingS3.prefix}/{ssds_key}")
+                    b = dst.blobstore.get(StagingGS.bucket, f"{StagingGS.prefix}/{ssds_key}")
+                    self.assertEqual(a, b)
+
     def _prepare_local_submission_dir(self, dirname: str, single_file=False) -> str:
         root = os.path.join(dirname, "test_submission")
         os.mkdir(root)

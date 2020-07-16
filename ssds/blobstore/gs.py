@@ -67,7 +67,7 @@ class GSAsyncPartIterator(AsyncPartIterator):
         self._blob = _client().bucket(bucket_name).get_blob(key)
         self.size = self._blob.size
         self.chunk_size = get_s3_multipart_chunk_size(self.size)
-        self.number_of_parts = ceil(self.size / self.chunk_size)
+        self._number_of_parts = ceil(self.size / self.chunk_size)
         self._executor = executor
 
     def __iter__(self) -> Generator[Part, None, None]:
