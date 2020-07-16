@@ -59,7 +59,7 @@ class S3BlobStore(BlobStore):
         return S3AsyncPartIterator(bucket_name, key, executor)
 
     def multipart_writer(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "MultipartWriter":
-        return S3MultipartWriter(bucket_name, key)
+        return S3MultipartWriter(bucket_name, key, executor)
 
 class S3AsyncPartIterator(AsyncPartIterator):
     parts_to_buffer = 2
@@ -119,15 +119,19 @@ def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int):
     return uploader.s3_etag, crc32c.google_storage_crc32c()
 
 class S3MultipartWriter(MultipartWriter):
-    def __init__(self, bucket_name: str, key: str):
+    concurrent_uploads = 4
+
+    def __init__(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None):
         self.bucket_name = bucket_name
         self.key = key
         self.mpu = aws.client("s3").create_multipart_upload(Bucket=bucket_name, Key=key)['UploadId']
         self.parts: List[Any] = list()
         self.s3_etag: Optional[str] = None
         self._closed = False
+        self._executor = executor
+        self._futures: Set[Future] = set()
 
-    def put_part(self, part: Part):
+    def _put_part(self, part: Part):
         aws_part_number = part.number + 1
         resp = aws.client("s3").upload_part(
             Body=part.data,
@@ -138,11 +142,41 @@ class S3MultipartWriter(MultipartWriter):
         )
         computed_etag = checksum.md5(part.data).hexdigest()
         assert computed_etag == resp['ETag'].strip("\"")
-        self.parts.append(dict(ETag=resp['ETag'], PartNumber=aws_part_number))
+        return dict(ETag=resp['ETag'], PartNumber=aws_part_number)
+
+    def put_part(self, part: Part):
+        if self._executor:
+            if self.concurrent_uploads <= len(self._futures):
+                for _ in as_completed(self._futures):
+                    break
+            self._collect_parts()
+            f = self._executor.submit(self._put_part, part)
+            self._futures.add(f)
+        else:
+            self.parts.append(self._put_part(part))
+
+    def _wait(self):
+        """
+        Wait for current part uploads to finish.
+        """
+        if self._executor:
+            if self._futures:
+                for f in as_completed(self._futures):
+                    f.result()  # raises if future errored
+
+    def _collect_parts(self):
+        if self._executor:
+            for f in self._futures.copy():
+                if f.done():
+                    self.parts.append(f.result())
+                    self._futures.remove(f)
 
     def close(self):
         if not self._closed:
             self._closed = True
+            if self._executor:
+                self._wait()
+                self._collect_parts()
             self.parts.sort(key=lambda item: item['PartNumber'])
             aws.client("s3").complete_multipart_upload(Bucket=self.bucket_name,
                                                        Key=self.key,
