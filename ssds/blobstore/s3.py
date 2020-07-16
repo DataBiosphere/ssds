@@ -9,11 +9,11 @@ from typing import (
     List,
     Tuple,
     Optional,
+    Generator,
 )
 
 from ssds import aws, checksum
-from ssds.blobstore import MiB, AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, BlobStore, AsyncPartIterator
-
+from ssds.blobstore import MiB, AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, BlobStore, AsyncPartIterator, Part
 
 class S3BlobStore(BlobStore):
     schema = "s3://"
@@ -54,6 +54,9 @@ class S3BlobStore(BlobStore):
         blob = aws.resource("s3").Bucket(bucket_name).Object(key)
         return blob.e_tag.strip("\"")
 
+    def parts(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "S3AsyncPartIterator":
+        return S3AsyncPartIterator(bucket_name, key, executor)
+
 class S3AsyncPartIterator(AsyncPartIterator):
     parts_to_buffer = 2
 
@@ -64,7 +67,7 @@ class S3AsyncPartIterator(AsyncPartIterator):
         self.number_of_parts = ceil(self.size / self.chunk_size)
         self._executor = executor or ThreadPoolExecutor(max_workers=4)
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[Part, None, None]:
         if 1 == self.number_of_parts:
             yield self._get_part(0)
         else:
@@ -77,16 +80,16 @@ class S3AsyncPartIterator(AsyncPartIterator):
                         futures.add(self._executor.submit(self._get_part, part_number))
                     part_numbers = part_numbers[number_of_parts_to_fetch:]
                 for f in as_completed(futures):
-                    part_number, data = f.result()
+                    part = f.result()
                     futures.remove(f)
-                    yield part_number, data
+                    yield part
                     break  # Break out of inner loop to avoid waiting for `as_completed` to provide next future
 
-    def _get_part(self, part_number: int) -> Tuple[int, bytes]:
+    def _get_part(self, part_number: int) -> Part:
         offset = part_number * self.chunk_size
         byte_range = f"bytes={offset}-{offset + self.chunk_size - 1}"
         data = self._blob.get(Range=byte_range)['Body'].read()
-        return part_number, data
+        return Part(part_number, data)
 
 def get_s3_multipart_chunk_size(filesize: int):
     """Returns the chunk size of the S3 multipart object, given a file's size."""

@@ -1,7 +1,9 @@
+from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
 from typing import (
     Optional,
+    Generator,
 )
-from concurrent.futures import ThreadPoolExecutor
 
 MiB = 1024 ** 2
 
@@ -33,11 +35,16 @@ class BlobStore:
     def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
         raise NotImplementedError()
 
+    def parts(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "AsyncPartIterator":
+        raise NotImplementedError()
+
+Part = namedtuple("Part", "number data")
+
 class AsyncPartIterator:
     def __init__(self, bucket_name, key, executor: ThreadPoolExecutor=None):
         self.size = -1
         self.chunk_size = -1
         self.number_of_parts = -1
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[Part, None, None]:
         raise NotImplementedError()
