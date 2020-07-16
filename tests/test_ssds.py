@@ -7,6 +7,7 @@ import tempfile
 from math import ceil
 from uuid import uuid4
 from random import randint
+from concurrent.futures import ThreadPoolExecutor
 
 from google.cloud import storage
 
@@ -89,8 +90,8 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                     print(StagingS3.compose_blobstore_url(ssds_key))
 
     def test_sync(self):
-        tests = [("sync aws -> gcp", StagingS3, StagingGS),
-                 ("sync gcp -> aws", StagingGS, StagingS3)]
+        tests = [("aws -> gcp", StagingS3, StagingGS),
+                 ("gcp -> aws", StagingGS, StagingS3)]
         for test_name, src, dst in tests:
             with self.subTest(test_name):
                 with tempfile.TemporaryDirectory() as dirname:
@@ -246,17 +247,26 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_s3_multipart_writer(self):
         from ssds.blobstore.s3 import S3MultipartWriter, Part
+        import time
+        workers = S3MultipartWriter.concurrent_uploads
+        tests = [("synchronous", None), ("asynchronous", ThreadPoolExecutor(max_workers=workers))]
         expected_data = os.urandom(1024**2 * 130)
-        chunk_size = get_s3_multipart_chunk_size(len(expected_data))
-        number_of_chunks = ceil(len(expected_data) / chunk_size)
-        key = f"{uuid4()}"
-        with S3MultipartWriter(_s3_staging_bucket, key) as writer:
-            for i in range(number_of_chunks):
-                part = Part(number=i,
-                            data=expected_data[i * chunk_size: (i + 1) * chunk_size])
-                writer.put_part(part)
-        retrieved_data = ssds.aws.resource("s3").Bucket(_s3_staging_bucket).Object(key).get()['Body'].read()
-        self.assertEqual(expected_data, retrieved_data)
+        for test_name, executor in tests:
+            with self.subTest(test_name):
+                chunk_size = get_s3_multipart_chunk_size(len(expected_data))
+                number_of_chunks = ceil(len(expected_data) / chunk_size)
+                key = f"{uuid4()}"
+                start_time = time.time()
+                with S3MultipartWriter(_s3_staging_bucket, key, executor) as writer:
+                    for i in range(number_of_chunks):
+                        part = Part(number=i,
+                                    data=expected_data[i * chunk_size: (i + 1) * chunk_size])
+                        writer.put_part(part)
+                if executor:
+                    executor.shutdown()
+                print("Multipart upload duration", test_name, time.time() - start_time)
+                retrieved_data = ssds.aws.resource("s3").Bucket(_s3_staging_bucket).Object(key).get()['Body'].read()
+                self.assertEqual(expected_data, retrieved_data)
 
 if __name__ == '__main__':
     unittest.main()
