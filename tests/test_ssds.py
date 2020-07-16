@@ -226,15 +226,17 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         blob.upload_from_file(io.BytesIO(data))
         return blob
 
-    def test_s3_multipart_upload(self):
+    def test_s3_multipart_writer(self):
+        from ssds.blobstore.s3 import S3MultipartWriter, Part
         expected_data = os.urandom(1024**2 * 130)
         chunk_size = get_s3_multipart_chunk_size(len(expected_data))
         number_of_chunks = ceil(len(expected_data) / chunk_size)
         key = f"{uuid4()}"
-        with ssds.blobstore.s3.MultipartUploader(_s3_staging_bucket, key) as uploader:
+        with S3MultipartWriter(_s3_staging_bucket, key) as writer:
             for i in range(number_of_chunks):
-                data = expected_data[i * chunk_size: (i + 1) * chunk_size]
-                uploader.put_part(i, data)
+                part = Part(number=i,
+                            data=expected_data[i * chunk_size: (i + 1) * chunk_size])
+                writer.put_part(part)
         retrieved_data = ssds.aws.resource("s3").Bucket(_s3_staging_bucket).Object(key).get()['Body'].read()
         self.assertEqual(expected_data, retrieved_data)
 

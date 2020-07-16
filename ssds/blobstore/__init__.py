@@ -38,6 +38,9 @@ class BlobStore:
     def parts(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "AsyncPartIterator":
         raise NotImplementedError()
 
+    def multipart_writer(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "MultipartWriter":
+        raise NotImplementedError()
+
 Part = namedtuple("Part", "number data")
 
 class AsyncPartIterator:
@@ -48,3 +51,16 @@ class AsyncPartIterator:
 
     def __iter__(self) -> Generator[Part, None, None]:
         raise NotImplementedError()
+
+class MultipartWriter:
+    def put_part(self, part: Part):
+        raise NotImplementedError()
+
+    def close(self):
+        raise NotImplementedError()
+
+    def __enter__(self, *args, **kwargs):
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        self.close()
