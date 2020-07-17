@@ -84,7 +84,8 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                     submission_id = f"{uuid4()}"
                     submission_name = "this_is_a_test_submission_for_sync"
                     uploaded_keys = [ssds_key for ssds_key in src.upload(root, submission_id, submission_name)]
-                ssds.sync(submission_id, src, dst)
+                for key in ssds.sync(submission_id, src, dst):
+                    pass
                 synced_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
                 self.assertEqual(sorted(uploaded_keys), sorted(synced_keys))
                 for ssds_key in synced_keys:
