@@ -34,6 +34,23 @@ List contents of a staging submission
 ssds staging list-submission --submission-id my_submission_id
 ```
 
+The above commands can target staging deployments other than the default with the `--deployment` argument.
+
+Available deployments can be listed with
+```
+	ssds deployment list-staging
+```
+and
+```
+	ssds deployment list-release
+```
+
+Submissions can be synced between staging deployments with
+```
+	ssds staging sync --submission-id my_existing_submission_id --dst-deployment my_dst_deployment
+```
+
+
 ## Links
 Project home page [GitHub](https://github.com/xbrianh/ssds)  
 
