@@ -4,9 +4,7 @@ import warnings
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from math import ceil
-from typing import (
-    Generator,
-)
+from typing import Tuple, Generator
 
 import gs_chunked_io as gscio
 from google.cloud.storage import Client
@@ -30,7 +28,7 @@ class GSBlobStore(BlobStore):
         blob.metadata = dict(SSDS_MD5=s3_etag, SSDS_CRC32C=gs_crc32c)
         blob.patch()
 
-    def _upload_oneshot(self, filepath: str, bucket: str, key: str):
+    def _upload_oneshot(self, filepath: str, bucket: str, key: str) -> Tuple[str, str]:
         with open(filepath, "rb") as fh:
             data = fh.read()
             gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
@@ -39,7 +37,7 @@ class GSBlobStore(BlobStore):
         assert gs_crc32c == _client().bucket(bucket).get_blob(key).crc32c
         return s3_etag, gs_crc32c
 
-    def list(self, bucket_name: str, prefix=""):
+    def list(self, bucket_name: str, prefix="") -> Generator[str, None, None]:
         for blob in _client().bucket(bucket_name).list_blobs(prefix=prefix):
             yield blob.name
 
@@ -88,14 +86,14 @@ class GSMultipartWriter(MultipartWriter):
         self._writer.close()
 
 @lru_cache()
-def _client():
+def _client() -> Client:
     if not os.environ.get('GOOGLE_CLOUD_PROJECT'):
         raise RuntimeError("Please set the GOOGLE_CLOUD_PROJECT environment variable")
     # Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
     warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
     return Client()
 
-def _upload_multipart(filepath: str, bucket_name: str, key: str, part_size: int):
+def _upload_multipart(filepath: str, bucket_name: str, key: str, part_size: int) -> Tuple[str, str]:
     _crc32c = checksum.crc32c(b"")
     _s3_etags = []
 

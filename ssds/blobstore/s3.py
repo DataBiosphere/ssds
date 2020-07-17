@@ -3,14 +3,7 @@ import os
 from math import ceil
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from typing import (
-    Any,
-    Set,
-    List,
-    Tuple,
-    Optional,
-    Generator,
-)
+from typing import Any, Set, List, Dict, Tuple, Union, Optional, Generator
 
 from ssds import aws, checksum
 from ssds.blobstore import (MiB, AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, BlobStore, AsyncPartIterator, Part,
@@ -29,7 +22,7 @@ class S3BlobStore(BlobStore):
         tags = dict(TagSet=[dict(Key="SSDS_MD5", Value=s3_etag), dict(Key="SSDS_CRC32C", Value=gs_crc32c)])
         aws.client("s3").put_object_tagging(Bucket=bucket, Key=key, Tagging=tags)
 
-    def _upload_oneshot(self, filepath: str, bucket: str, key: str):
+    def _upload_oneshot(self, filepath: str, bucket: str, key: str) -> Tuple[str, str]:
         blob = aws.resource("s3").Bucket(bucket).Object(key)
         with open(filepath, "rb") as fh:
             data = fh.read()
@@ -39,7 +32,7 @@ class S3BlobStore(BlobStore):
         assert s3_etag == blob.e_tag.strip("\"")
         return s3_etag, gs_crc32c
 
-    def list(self, bucket: str, prefix=""):
+    def list(self, bucket: str, prefix="") -> Generator[str, None, None]:
         for item in aws.resource("s3").Bucket(bucket).objects.filter(Prefix=prefix):
             yield item.key
 
@@ -95,7 +88,7 @@ class S3AsyncPartIterator(AsyncPartIterator):
         data = self._blob.get(Range=byte_range)['Body'].read()
         return Part(part_number, data)
 
-def get_s3_multipart_chunk_size(filesize: int):
+def get_s3_multipart_chunk_size(filesize: int) -> int:
     """Returns the chunk size of the S3 multipart object, given a file's size."""
     if filesize <= AWS_MAX_MULTIPART_COUNT * AWS_MIN_CHUNK_SIZE:
         return AWS_MIN_CHUNK_SIZE
@@ -104,7 +97,7 @@ def get_s3_multipart_chunk_size(filesize: int):
         part_size_in_integer_megabytes = ((raw_part_size + MiB - 1) // MiB) * MiB
         return part_size_in_integer_megabytes
 
-def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int):
+def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int) -> Tuple[str, str]:
     with S3MultipartWriter(bucket, key) as uploader:
         part_number = 0
         crc32c = checksum.crc32c(b"")
@@ -125,13 +118,13 @@ class S3MultipartWriter(MultipartWriter):
         self.bucket_name = bucket_name
         self.key = key
         self.mpu = aws.client("s3").create_multipart_upload(Bucket=bucket_name, Key=key)['UploadId']
-        self.parts: List[Any] = list()
+        self.parts: List[Dict[str, Union[str, int]]] = list()
         self.s3_etag: Optional[str] = None
         self._closed = False
         self._executor = executor
         self._futures: Set[Future] = set()
 
-    def _put_part(self, part: Part):
+    def _put_part(self, part: Part) -> Dict[str, Union[str, int]]:
         aws_part_number = part.number + 1
         resp = aws.client("s3").upload_part(
             Body=part.data,

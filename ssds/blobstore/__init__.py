@@ -1,9 +1,6 @@
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
-from typing import (
-    Optional,
-    Generator,
-)
+from typing import Optional, Generator
 
 MiB = 1024 ** 2
 
@@ -45,9 +42,9 @@ Part = namedtuple("Part", "number data")
 
 class AsyncPartIterator:
     def __init__(self, bucket_name, key, executor: ThreadPoolExecutor=None):
-        self.size = -1
-        self.chunk_size = -1
-        self._number_of_parts = -1
+        self.size: Optional[int] = None
+        self.chunk_size: Optional[int] = None
+        self._number_of_parts: Optional[int] = None
 
     def __len__(self):
         return self._number_of_parts
