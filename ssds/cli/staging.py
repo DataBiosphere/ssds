@@ -4,6 +4,7 @@ Upload, sync, and query staging area
 import os
 import argparse
 
+from ssds import sync
 from ssds.deployment import Staging
 from ssds.cli import dispatch
 
@@ -47,6 +48,18 @@ def list_submission(args: argparse.Namespace):
         print(ssds.compose_blobstore_url(ssds_key))
     if not submission_exists:
         print(f"No submission found for {args.submission_id}")
+
+@staging_cli.command("sync", arguments={
+    "--dst-deployment": dict(type=str, required=True, help="destination deployment"),
+    "--submission-id": dict(type=str, required=True, help="id of submission")
+})
+def sync_command(args: argparse.Namespace):
+    src = Staging[args.deployment].ssds
+    dst = Staging[args.dst_deployment].ssds
+    src_bucket = f"{src.blobstore.schema}{src.bucket}"
+    dst_bucket = f"{dst.blobstore.schema}{dst.bucket}"
+    for key in sync(args.submission_id, src, dst):
+        print(f"Syncing: {src_bucket}/{key} -> {dst_bucket}/{key}")
 
 @staging_cli.command("bucket")
 def get_bucket(args: argparse.Namespace):
