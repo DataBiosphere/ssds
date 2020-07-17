@@ -16,7 +16,7 @@ class TestStagingCLI(unittest.TestCase):
         mock_staging = MagicMock()
         mock_staging.upload = MagicMock()
         with patch("ssds.deployment.Staging.ssds", mock_staging):
-            args = Namespace(submission_id="foo", name="bar", path="asf")
+            args = Namespace(submission_id="foo", name="bar", path="asf", deployment="default")
             staging_cli.upload(args)
             expected_path = os.path.abspath(os.path.normpath(args.path))
             mock_staging.upload.assert_called_with(expected_path, args.submission_id, args.name)
@@ -25,7 +25,7 @@ class TestStagingCLI(unittest.TestCase):
         mock_staging = Mock()
         mock_staging.list = MagicMock()
         with patch("ssds.deployment.Staging.ssds", mock_staging):
-            args = Namespace()
+            args = Namespace(deployment="default")
             staging_cli.list(args)
             mock_staging.list.assert_called()
 
@@ -33,7 +33,7 @@ class TestStagingCLI(unittest.TestCase):
         mock_staging = Mock()
         mock_staging.list_submission = MagicMock()
         with patch("ssds.deployment.Staging.ssds", mock_staging):
-            args = Namespace(submission_id="foo")
+            args = Namespace(submission_id="foo", deployment="default")
             staging_cli.list_submission(args)
             mock_staging.list_submission.assert_called_with(args.submission_id)
 
