@@ -50,3 +50,7 @@ class Staging(Enum):
 class Release(Enum):
     aws_test = _S3ReleaseTest
     gcp_test = _GSReleaseTest
+
+    @property
+    def ssds(self) -> SSDS:
+        return self.value()

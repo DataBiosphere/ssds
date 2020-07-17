@@ -6,6 +6,7 @@ pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noq
 sys.path.insert(0, pkg_root)  # noqa
 
 import ssds.cli.staging
+import ssds.cli.deployment
 from ssds.cli import dispatch
 
 
