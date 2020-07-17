@@ -1,6 +1,6 @@
 import os
-import typing
 from concurrent.futures import ThreadPoolExecutor
+from typing import Tuple, Optional, Generator
 
 from ssds.blobstore import BlobStore
 from ssds.blobstore.s3 import S3BlobStore
@@ -11,12 +11,12 @@ MAX_KEY_LENGTH = 1024  # this is the maximum length for S3 and GS object names
 # S3 docs: https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html
 
 class SSDS:
-    blobstore: typing.Optional[BlobStore] = None
-    bucket: typing.Optional[str] = None
+    blobstore: Optional[BlobStore] = None
+    bucket: Optional[str] = None
     prefix = "submissions"
     _name_delimeter = "--"  # Not using "/" as name delimeter produces friendlier `aws s3` listing
 
-    def list(self):
+    def list(self) -> Generator[Tuple[str, str], None, None]:
         listing = self.blobstore.list(self.bucket, self.prefix)
         prev_submission_id = ""
         for key in listing:
@@ -30,12 +30,12 @@ class SSDS:
                 yield submission_id, submission_name
                 prev_submission_id = submission_id
 
-    def list_submission(self, submission_id: str):
+    def list_submission(self, submission_id: str) -> Generator[str, None, None]:
         for key in self.blobstore.list(self.bucket, f"{self.prefix}/{submission_id}"):
             ssds_key = key.replace(f"{self.prefix}/", "", 1)
             yield ssds_key
 
-    def get_submission_name(self, submission_id: str):
+    def get_submission_name(self, submission_id: str) -> str:
         name = None
         for key in self.blobstore.list(self.bucket, f"{self.prefix}/{submission_id}"):
             ssds_key = key.strip(f"{self.prefix}/")
@@ -47,7 +47,7 @@ class SSDS:
     def upload(self,
                root: str,
                submission_id: str,
-               name: typing.Optional[str]=None) -> typing.Generator[str, None, None]:
+               name: Optional[str]=None) -> Generator[str, None, None]:
         """
         Upload files from root directory and yield ssds_key for each file.
         This returns a generator that must be iterated for uploads to occur.
@@ -62,7 +62,7 @@ class SSDS:
         for ssds_key in self._upload_local_tree(root, submission_id, name):
             yield ssds_key
 
-    def _upload_local_tree(self, root: str, submission_id: str, name: str):
+    def _upload_local_tree(self, root: str, submission_id: str, name: str) -> Generator[str, None, None]:
         root = os.path.normpath(root)
         assert root == os.path.abspath(root)
         assert " " not in name  # TODO: create regex to enforce name format?
@@ -81,18 +81,18 @@ class SSDS:
             self.blobstore.upload_object(filepath, self.bucket, dst_key)
             yield ssds_key
 
-    def compose_blobstore_url(self, ssds_key: str):
+    def compose_blobstore_url(self, ssds_key: str) -> str:
         return f"{self.blobstore.schema}{self.bucket}/{self.prefix}/{ssds_key}"
 
 class Staging(SSDS):
-    blobstore: typing.Optional[BlobStore] = S3BlobStore()
+    blobstore: Optional[BlobStore] = S3BlobStore()
     bucket = "human-pangenomics"
 
 class Release(SSDS):
     def upload(self, *args, **kargs):
         raise NotImplementedError("Direct uploads to the release area are not supported.")
 
-def _list_tree(root):
+def _list_tree(root) -> Generator[str, None, None]:
     for (dirpath, dirnames, filenames) in os.walk(root):
         for filename in filenames:
             relpath = os.path.join(dirpath, filename)
