@@ -48,6 +48,14 @@ def list_submission(args: argparse.Namespace):
     if not submission_exists:
         print(f"No submission found for {args.submission_id}")
 
+@staging_cli.command("bucket")
+def get_bucket(args: argparse.Namespace):
+    """
+    Print bucket of SSDS deployment
+    """
+    ssds = Staging[args.deployment].ssds
+    print(f"{ssds.blobstore.schema}{ssds.bucket}")
+
 @staging_cli.command("release")
 def release(args: argparse.Namespace):
     raise NotImplementedError()
