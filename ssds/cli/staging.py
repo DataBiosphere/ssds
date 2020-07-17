@@ -5,7 +5,9 @@ import os
 import argparse
 
 import ssds
+from ssds.deployment import Staging
 from ssds.cli import dispatch
+
 
 staging_cli = dispatch.group("staging", help=__doc__)
 
@@ -20,15 +22,15 @@ def upload(args: argparse.Namespace):
     Existing files in the submission will be overwritten.
     """
     root = os.path.abspath(os.path.normpath(args.path))
-    for ssds_key in ssds.Staging().upload(root, args.submission_id, args.name):
-        print(ssds.Staging().compose_blobstore_url(ssds_key))
+    for ssds_key in Staging.default.ssds.upload(root, args.submission_id, args.name):
+        print(Staging.default.ssds.compose_blobstore_url(ssds_key))
 
 @staging_cli.command("list")
 def list(args: argparse.Namespace):
     """
     List submissions in the staging bucket"
     """
-    for submission_id, submission_name in ssds.Staging().list():
+    for submission_id, submission_name in Staging.default.ssds.list():
         print(submission_id, submission_name)
 
 @staging_cli.command("list-submission", arguments={
@@ -36,9 +38,9 @@ def list(args: argparse.Namespace):
 })
 def list_submission(args: argparse.Namespace):
     submission_exists = False
-    for ssds_key in ssds.Staging().list_submission(args.submission_id):
+    for ssds_key in Staging.default.ssds.list_submission(args.submission_id):
         submission_exists = True
-        print(ssds.Staging().compose_blobstore_url(ssds_key))
+        print(Staging.default.ssds.compose_blobstore_url(ssds_key))
     if not submission_exists:
         print(f"No submission found for {args.submission_id}")
 
