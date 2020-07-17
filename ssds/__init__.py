@@ -84,14 +84,6 @@ class SSDS:
     def compose_blobstore_url(self, ssds_key: str) -> str:
         return f"{self.blobstore.schema}{self.bucket}/{self.prefix}/{ssds_key}"
 
-class Staging(SSDS):
-    blobstore: Optional[BlobStore] = S3BlobStore()
-    bucket = "human-pangenomics"
-
-class Release(SSDS):
-    def upload(self, *args, **kargs):
-        raise NotImplementedError("Direct uploads to the release area are not supported.")
-
 def _list_tree(root) -> Generator[str, None, None]:
     for (dirpath, dirnames, filenames) in os.walk(root):
         for filename in filenames:

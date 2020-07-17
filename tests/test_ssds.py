@@ -15,30 +15,15 @@ pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noq
 sys.path.insert(0, pkg_root)  # noqa
 
 import ssds
+from ssds.deployment import _S3StagingTest, _GSStagingTest
 from ssds.blobstore import AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB
 from ssds.blobstore.s3 import S3BlobStore, S3AsyncPartIterator, get_s3_multipart_chunk_size
 from ssds.blobstore.gs import GSBlobStore, GSAsyncPartIterator
 from tests import infra
 
 
-_s3_staging_bucket = infra.get_env("SSDS_S3_STAGING_TEST_BUCKET")
-_gs_staging_bucket = infra.get_env("SSDS_GS_STAGING_TEST_BUCKET")
-_s3_release_bucket = infra.get_env("SSDS_S3_RELEASE_TEST_BUCKET")
-_gs_release_bucket = infra.get_env("SSDS_GS_RELEASE_TEST_BUCKET")
-
-# Prevent accidental data upload to main HPP bucket
-ssds.Staging.blobstore = None
-ssds.Staging.bucket = None
-
-class _StagingS3(ssds.Staging):
-    blobstore = S3BlobStore()
-    bucket = _s3_staging_bucket
-StagingS3 = _StagingS3()
-
-class _StagingGS(ssds.Staging):
-    blobstore = GSBlobStore()
-    bucket = _gs_staging_bucket
-StagingGS = _StagingGS()
+S3_SSDS = _S3StagingTest()
+GS_SSDS = _GSStagingTest()
 
 class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_upload(self):
@@ -47,11 +32,11 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             submission_id = f"{uuid4()}"
             submission_name = "this_is_a_test_submission"
             with self.subTest("aws"):
-                for ssds_key in StagingS3.upload(root, submission_id, submission_name):
-                    print(StagingS3.compose_blobstore_url(ssds_key))
+                for ssds_key in S3_SSDS.upload(root, submission_id, submission_name):
+                    print(S3_SSDS.compose_blobstore_url(ssds_key))
             with self.subTest("gcp"):
-                for ssds_key in StagingGS.upload(root, submission_id, submission_name):
-                    print(StagingGS.compose_blobstore_url(ssds_key))
+                for ssds_key in GS_SSDS.upload(root, submission_id, submission_name):
+                    print(GS_SSDS.compose_blobstore_url(ssds_key))
 
     def test_upload_name_length_error(self):
         with tempfile.TemporaryDirectory() as dirname:
@@ -60,11 +45,11 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             submission_name = "a" * ssds.MAX_KEY_LENGTH
             with self.subTest("aws"):
                 with self.assertRaises(ValueError):
-                    for _ in StagingS3.upload(root, submission_id, submission_name):
+                    for _ in S3_SSDS.upload(root, submission_id, submission_name):
                         pass
             with self.subTest("gcp"):
                 with self.assertRaises(ValueError):
-                    for _ in StagingGS.upload(root, submission_id, submission_name):
+                    for _ in GS_SSDS.upload(root, submission_id, submission_name):
                         pass
 
     def test_upload_name_collisions(self):
@@ -74,24 +59,24 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             submission_name = None
             with self.subTest("Must provide name for new submission"):
                 with self.assertRaises(ValueError):
-                    for _ in StagingS3.upload(root, submission_id, submission_name):
+                    for _ in S3_SSDS.upload(root, submission_id, submission_name):
                         pass
             with self.subTest("Should succeed with a name"):
                 submission_name = "name_collision_test_submission"
-                for ssds_key in StagingS3.upload(root, submission_id, submission_name):
-                    print(StagingS3.compose_blobstore_url(ssds_key))
+                for ssds_key in S3_SSDS.upload(root, submission_id, submission_name):
+                    print(S3_SSDS.compose_blobstore_url(ssds_key))
             with self.subTest("Should raise if provided name collides with existing name"):
                 submission_name = "name_collision_test_submission_wrong_name"
                 with self.assertRaises(ValueError):
-                    for ssds_key in StagingS3.upload(root, submission_id, submission_name):
+                    for ssds_key in S3_SSDS.upload(root, submission_id, submission_name):
                         pass
             with self.subTest("Submitting submission again should succeed while omitting name"):
-                for ssds_key in StagingS3.upload(root, submission_id):
-                    print(StagingS3.compose_blobstore_url(ssds_key))
+                for ssds_key in S3_SSDS.upload(root, submission_id):
+                    print(S3_SSDS.compose_blobstore_url(ssds_key))
 
     def test_sync(self):
-        tests = [("aws -> gcp", StagingS3, StagingGS),
-                 ("gcp -> aws", StagingGS, StagingS3)]
+        tests = [("aws -> gcp", S3_SSDS, GS_SSDS),
+                 ("gcp -> aws", GS_SSDS, S3_SSDS)]
         for test_name, src, dst in tests:
             with self.subTest(test_name):
                 with tempfile.TemporaryDirectory() as dirname:
@@ -103,8 +88,8 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                 synced_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
                 self.assertEqual(sorted(uploaded_keys), sorted(synced_keys))
                 for ssds_key in synced_keys:
-                    a = src.blobstore.get(StagingS3.bucket, f"{StagingS3.prefix}/{ssds_key}")
-                    b = dst.blobstore.get(StagingGS.bucket, f"{StagingGS.prefix}/{ssds_key}")
+                    a = src.blobstore.get(S3_SSDS.bucket, f"{S3_SSDS.prefix}/{ssds_key}")
+                    b = dst.blobstore.get(GS_SSDS.bucket, f"{GS_SSDS.prefix}/{ssds_key}")
                     self.assertEqual(a, b)
 
     def _prepare_local_submission_dir(self, dirname: str, single_file=False) -> str:
@@ -148,7 +133,7 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_blob_crc32c(self):
         data = os.urandom(200)
-        blob = storage.Client().bucket(_gs_staging_bucket).blob("test")
+        blob = storage.Client().bucket(GS_SSDS.bucket).blob("test")
         with io.BytesIO(data) as fh:
             blob.upload_from_file(fh)
         blob.reload()
@@ -157,7 +142,7 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_blob_md5(self):
         data = os.urandom(200)
-        blob = ssds.aws.resource("s3").Bucket(_s3_staging_bucket).Object("test")
+        blob = ssds.aws.resource("s3").Bucket(S3_SSDS.bucket).Object("test")
         with io.BytesIO(data) as fh:
             blob.upload_fileobj(fh)
         cs = ssds.checksum.md5(data).hexdigest()
@@ -189,14 +174,14 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         with self.subTest("aws"):
             key = f"{uuid4()}"
             expected_data = os.urandom(10)
-            self._put_s3_obj(_s3_staging_bucket, key, expected_data)
-            data = S3BlobStore().get(_s3_staging_bucket, key)
+            self._put_s3_obj(S3_SSDS.bucket, key, expected_data)
+            data = S3BlobStore().get(S3_SSDS.bucket, key)
             self.assertEqual(data, expected_data)
         with self.subTest("gcp"):
             key = f"{uuid4()}"
             expected_data = os.urandom(10)
-            self._put_gs_obj(_s3_staging_bucket, key, expected_data)
-            data = GSBlobStore().get(_gs_staging_bucket, key)
+            self._put_gs_obj(S3_SSDS.bucket, key, expected_data)
+            data = GSBlobStore().get(GS_SSDS.bucket, key)
             self.assertEqual(data, expected_data)
 
     def _test_put(self):
@@ -207,14 +192,14 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_cloud_native_checksums(self):
         key = f"{uuid4()}"
         with self.subTest("aws"):
-            blob = self._put_s3_obj(_s3_staging_bucket, key, os.urandom(1))
+            blob = self._put_s3_obj(S3_SSDS.bucket, key, os.urandom(1))
             expected_checksum = blob.e_tag.strip("\"")
-            self.assertEqual(expected_checksum, S3BlobStore().cloud_native_checksum(_s3_staging_bucket, key))
+            self.assertEqual(expected_checksum, S3BlobStore().cloud_native_checksum(S3_SSDS.bucket, key))
         with self.subTest("gcp"):
-            blob = self._put_gs_obj(_gs_staging_bucket, key, os.urandom(1))
+            blob = self._put_gs_obj(GS_SSDS.bucket, key, os.urandom(1))
             blob.reload()
             expected_checksum = blob.crc32c
-            self.assertEqual(expected_checksum, GSBlobStore().cloud_native_checksum(_gs_staging_bucket, key))
+            self.assertEqual(expected_checksum, GSBlobStore().cloud_native_checksum(GS_SSDS.bucket, key))
 
     def test_part_iterators(self):
         key = f"{uuid4()}"
@@ -223,10 +208,10 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         number_of_parts = ceil(len(expected_data) / chunk_size)
         expected_parts = [expected_data[i * chunk_size:(i + 1) * chunk_size]
                           for i in range(number_of_parts)]
-        tests = [("aws", _s3_staging_bucket, self._put_s3_obj, S3AsyncPartIterator),
-                 ("gcp", _gs_staging_bucket, self._put_gs_obj, GSAsyncPartIterator)]
-        for replica, bucket_name, upload, part_iterator in tests:
-            with self.subTest(replica):
+        tests = [("aws", S3_SSDS.bucket, self._put_s3_obj, S3AsyncPartIterator),
+                 ("gcp", GS_SSDS.bucket, self._put_gs_obj, GSAsyncPartIterator)]
+        for replica_name, bucket_name, upload, part_iterator in tests:
+            with self.subTest(replica_name):
                 upload(bucket_name, key, expected_data)
                 count = 0
                 for part_number, data in part_iterator(bucket_name, key):
@@ -257,7 +242,7 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                 number_of_chunks = ceil(len(expected_data) / chunk_size)
                 key = f"{uuid4()}"
                 start_time = time.time()
-                with S3MultipartWriter(_s3_staging_bucket, key, executor) as writer:
+                with S3MultipartWriter(S3_SSDS.bucket, key, executor) as writer:
                     for i in range(number_of_chunks):
                         part = Part(number=i,
                                     data=expected_data[i * chunk_size: (i + 1) * chunk_size])
@@ -265,7 +250,7 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                 if executor:
                     executor.shutdown()
                 print("Multipart upload duration", test_name, time.time() - start_time)
-                retrieved_data = ssds.aws.resource("s3").Bucket(_s3_staging_bucket).Object(key).get()['Body'].read()
+                retrieved_data = ssds.aws.resource("s3").Bucket(S3_SSDS.bucket).Object(key).get()['Body'].read()
                 self.assertEqual(expected_data, retrieved_data)
 
 if __name__ == '__main__':
