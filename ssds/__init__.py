@@ -90,14 +90,15 @@ def _list_tree(root) -> Generator[str, None, None]:
             relpath = os.path.join(dirpath, filename)
             yield os.path.abspath(relpath)
 
-def sync(submission_id: str, src: SSDS, dst: SSDS):
+def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]:
     with ThreadPoolExecutor(max_workers=4) as e:
         for key in src.blobstore.list(src.bucket, f"{src.prefix}/{submission_id}"):
+            yield key
             parts = src.blobstore.parts(src.bucket, key, executor=e)
             if 1 == len(parts):
                 dst.blobstore.put(dst.bucket, key, list(parts)[0].data)
                 continue
             else:
-                with dst.blobstore.multipart_writer(dst.bucket, key, e) as writer:
+                with dst.blobstore.multipart_writer(dst.bucket, key, executor=e) as writer:
                     for part in parts:
                         writer.put_part(part)
