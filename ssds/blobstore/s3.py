@@ -7,7 +7,7 @@ from typing import Any, Set, List, Dict, Tuple, Union, Optional, Generator
 
 from ssds import aws, checksum
 from ssds.blobstore import (MiB, AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, BlobStore, AsyncPartIterator, Part,
-                            MultipartWriter)
+                            SSDSObjectTag, MultipartWriter)
 
 class S3BlobStore(BlobStore):
     schema = "s3://"
@@ -19,16 +19,16 @@ class S3BlobStore(BlobStore):
             s3_etag, gs_crc32c = self._upload_oneshot(filepath, bucket, key)
         else:
             s3_etag, gs_crc32c = _upload_multipart(filepath, bucket, key, chunk_size)
-        self.put_tags(bucket, key, dict(SSDS_MD5=s3_etag, SSDS_CRC32C=gs_crc32c))
+        assert s3_etag == self.cloud_native_checksum(bucket, key)
+        tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
+        self.put_tags(bucket, key, tags)
 
     def _upload_oneshot(self, filepath: str, bucket: str, key: str) -> Tuple[str, str]:
-        blob = aws.resource("s3").Bucket(bucket).Object(key)
         with open(filepath, "rb") as fh:
             data = fh.read()
         gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
         s3_etag = checksum.md5(data).hexdigest()
         self.put(bucket, key, data)
-        assert s3_etag == blob.e_tag.strip("\"")
         return s3_etag, gs_crc32c
 
     def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
@@ -182,5 +182,4 @@ class S3MultipartWriter(MultipartWriter):
             bin_md5 = b"".join([checksum.binascii.unhexlify(part['ETag'].strip("\""))
                                 for part in self.parts])
             composite_etag = checksum.md5(bin_md5).hexdigest() + "-" + str(len(self.parts))
-            assert composite_etag == aws.resource("s3").Bucket(self.bucket_name).Object(self.key).e_tag.strip("\"")
             self.s3_etag = composite_etag

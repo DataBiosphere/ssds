@@ -11,7 +11,7 @@ from google.cloud.storage import Client
 
 from ssds import checksum
 from ssds.blobstore.s3 import get_s3_multipart_chunk_size
-from ssds.blobstore import BlobStore, AsyncPartIterator, Part, MultipartWriter
+from ssds.blobstore import BlobStore, AsyncPartIterator, Part, SSDSObjectTag, MultipartWriter
 
 
 class GSBlobStore(BlobStore):
@@ -24,7 +24,9 @@ class GSBlobStore(BlobStore):
             s3_etag, gs_crc32c = self._upload_oneshot(filepath, bucket, key)
         else:
             s3_etag, gs_crc32c = _upload_multipart(filepath, bucket, key, chunk_size)
-        self.put_tags(bucket, key, dict(SSDS_MD5=s3_etag, SSDS_CRC32C=gs_crc32c))
+        assert gs_crc32c == self.cloud_native_checksum(bucket, key)
+        tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
+        self.put_tags(bucket, key, tags)
 
     def _upload_oneshot(self, filepath: str, bucket: str, key: str) -> Tuple[str, str]:
         with open(filepath, "rb") as fh:
@@ -32,7 +34,6 @@ class GSBlobStore(BlobStore):
             gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
             s3_etag = checksum.md5(data).hexdigest()
             self.put(bucket, key, data)
-        assert gs_crc32c == _client().bucket(bucket).get_blob(key).crc32c
         return s3_etag, gs_crc32c
 
     def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
@@ -116,5 +117,4 @@ def _upload_multipart(filepath: str, bucket_name: str, key: str, part_size: int)
 
     s3_etag = checksum.compute_composite_etag(_s3_etags)
     gs_crc32c = _crc32c.google_storage_crc32c()
-    assert gs_crc32c == bucket.get_blob(key).crc32c
     return s3_etag, gs_crc32c

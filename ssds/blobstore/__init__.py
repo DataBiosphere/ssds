@@ -43,6 +43,10 @@ class BlobStore:
 
 Part = namedtuple("Part", "number data")
 
+class SSDSObjectTag:
+    SSDS_MD5 = "SSDS_MD5"
+    SSDS_CRC32C = "SSDS_CRC32C"
+
 class AsyncPartIterator:
     def __init__(self, bucket_name, key, executor: ThreadPoolExecutor=None):
         self.size: Optional[int] = None
