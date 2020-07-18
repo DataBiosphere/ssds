@@ -41,6 +41,10 @@ class GSBlobStore(BlobStore):
         blob.metadata = tags
         blob.patch()
 
+    def get_tags(self, bucket_name: str, key: str) -> Dict[str, str]:
+        blob = _client().bucket(bucket_name).get_blob(key)
+        return blob.metadata.copy()
+
     def list(self, bucket_name: str, prefix="") -> Generator[str, None, None]:
         for blob in _client().bucket(bucket_name).list_blobs(prefix=prefix):
             yield blob.name

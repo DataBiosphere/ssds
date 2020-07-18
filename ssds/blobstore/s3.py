@@ -36,6 +36,11 @@ class S3BlobStore(BlobStore):
                     for key, val in tags.items()]
         aws.client("s3").put_object_tagging(Bucket=bucket_name, Key=key, Tagging=dict(TagSet=aws_tags))
 
+    def get_tags(self, bucket_name: str, key: str) -> Dict[str, str]:
+        tagset = aws.client("s3").get_object_tagging(Bucket=bucket_name, Key=key)
+        return {tag['Key']: tag['Value']
+                for tag in tagset['TagSet']}
+
     def list(self, bucket: str, prefix="") -> Generator[str, None, None]:
         for item in aws.resource("s3").Bucket(bucket).objects.filter(Prefix=prefix):
             yield item.key

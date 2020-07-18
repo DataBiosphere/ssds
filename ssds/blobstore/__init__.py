@@ -23,6 +23,9 @@ class BlobStore:
     def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
         raise NotImplementedError()
 
+    def get_tags(self, bucket_name: str, key: str) -> Dict[str, str]:
+        raise NotImplementedError()
+
     def list(self, bucket_name: str, prefix=""):
         raise NotImplementedError()
 

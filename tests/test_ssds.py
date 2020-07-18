@@ -220,6 +220,16 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                     count += 1
                 self.assertEqual(number_of_parts, count)
 
+    def test_tags(self):
+        key = f"{uuid4()}"
+        tests = [("aws", S3_SSDS.blobstore, S3_SSDS.bucket, self._put_s3_obj),
+                 ("gcp", GS_SSDS.blobstore, GS_SSDS.bucket, self._put_gs_obj)]
+        for replica_name, blobstore, bucket_name, upload in tests:
+            upload(bucket_name, key, b"")
+            tags = dict(foo="bar", doom="gloom")
+            blobstore.put_tags(bucket_name, key, tags)
+            self.assertEqual(tags, blobstore.get_tags(bucket_name, key))
+
     def _put_s3_obj(self, bucket, key, data):
         blob = ssds.aws.resource("s3").Bucket(bucket).Object(key)
         blob.upload_fileobj(io.BytesIO(data))
