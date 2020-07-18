@@ -1,6 +1,6 @@
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, Generator
+from typing import Dict, Optional, Generator
 
 MiB = 1024 ** 2
 
@@ -18,6 +18,9 @@ class BlobStore:
     schema: Optional[str] = None
 
     def upload_object(self, filepath: str, bucket: str, key: str):
+        raise NotImplementedError()
+
+    def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
         raise NotImplementedError()
 
     def list(self, bucket_name: str, prefix=""):

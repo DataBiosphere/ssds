@@ -4,7 +4,7 @@ import warnings
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from math import ceil
-from typing import Tuple, Generator
+from typing import Dict, Tuple, Generator
 
 import gs_chunked_io as gscio
 from google.cloud.storage import Client
@@ -24,9 +24,7 @@ class GSBlobStore(BlobStore):
             s3_etag, gs_crc32c = self._upload_oneshot(filepath, bucket, key)
         else:
             s3_etag, gs_crc32c = _upload_multipart(filepath, bucket, key, chunk_size)
-        blob = _client().bucket(bucket).blob(key)
-        blob.metadata = dict(SSDS_MD5=s3_etag, SSDS_CRC32C=gs_crc32c)
-        blob.patch()
+        self.put_tags(bucket, key, dict(SSDS_MD5=s3_etag, SSDS_CRC32C=gs_crc32c))
 
     def _upload_oneshot(self, filepath: str, bucket: str, key: str) -> Tuple[str, str]:
         with open(filepath, "rb") as fh:
@@ -36,6 +34,11 @@ class GSBlobStore(BlobStore):
             self.put(bucket, key, data)
         assert gs_crc32c == _client().bucket(bucket).get_blob(key).crc32c
         return s3_etag, gs_crc32c
+
+    def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
+        blob = _client().bucket(bucket_name).get_blob(key)
+        blob.metadata = tags
+        blob.patch()
 
     def list(self, bucket_name: str, prefix="") -> Generator[str, None, None]:
         for blob in _client().bucket(bucket_name).list_blobs(prefix=prefix):
