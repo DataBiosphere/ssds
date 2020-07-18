@@ -101,12 +101,12 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
                 with dst.blobstore.multipart_writer(dst.bucket, key, executor=e) as writer:
                     for part in parts:
                         writer.put_part(part)
-            tags = src.blobstore.get_tags(src.bucket, key)
-            cloud_native_checksum = dst.blobstore.cloud_native_checksum(dst.bucket, key)
+            src_tags = src.blobstore.get_tags(src.bucket, key)
+            dst_checksum = dst.blobstore.cloud_native_checksum(dst.bucket, key)
             if "gs://" == dst.blobstore.schema:
-                assert tags[SSDSObjectTag.SSDS_CRC32C] == cloud_native_checksum
+                assert src_tags[SSDSObjectTag.SSDS_CRC32C] == dst_checksum
             elif "s3://" == dst.blobstore.schema:
-                assert tags[SSDSObjectTag.SSDS_MD5] == cloud_native_checksum
+                assert src_tags[SSDSObjectTag.SSDS_MD5] == dst_checksum
             else:
                 raise RuntimeError("Unknown blobstore schema!")
-            dst.blobstore.put_tags(dst.bucket, key, tags)
+            dst.blobstore.put_tags(dst.bucket, key, src_tags)
