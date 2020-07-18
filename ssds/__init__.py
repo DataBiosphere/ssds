@@ -2,7 +2,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Tuple, Optional, Generator
 
-from ssds.blobstore import BlobStore
+from ssds.blobstore import BlobStore, SSDSObjectTag
 from ssds.blobstore.s3 import S3BlobStore
 
 
@@ -97,8 +97,16 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
             parts = src.blobstore.parts(src.bucket, key, executor=e)
             if 1 == len(parts):
                 dst.blobstore.put(dst.bucket, key, list(parts)[0].data)
-                continue
             else:
                 with dst.blobstore.multipart_writer(dst.bucket, key, executor=e) as writer:
                     for part in parts:
                         writer.put_part(part)
+            src_tags = src.blobstore.get_tags(src.bucket, key)
+            dst_checksum = dst.blobstore.cloud_native_checksum(dst.bucket, key)
+            if "gs://" == dst.blobstore.schema:
+                assert src_tags[SSDSObjectTag.SSDS_CRC32C] == dst_checksum
+            elif "s3://" == dst.blobstore.schema:
+                assert src_tags[SSDSObjectTag.SSDS_MD5] == dst_checksum
+            else:
+                raise RuntimeError("Unknown blobstore schema!")
+            dst.blobstore.put_tags(dst.bucket, key, src_tags)
