@@ -19,8 +19,7 @@ class S3BlobStore(BlobStore):
             s3_etag, gs_crc32c = self._upload_oneshot(filepath, bucket, key)
         else:
             s3_etag, gs_crc32c = _upload_multipart(filepath, bucket, key, chunk_size)
-        tags = dict(TagSet=[dict(Key="SSDS_MD5", Value=s3_etag), dict(Key="SSDS_CRC32C", Value=gs_crc32c)])
-        aws.client("s3").put_object_tagging(Bucket=bucket, Key=key, Tagging=tags)
+        self.put_tags(bucket, key, dict(SSDS_MD5=s3_etag, SSDS_CRC32C=gs_crc32c))
 
     def _upload_oneshot(self, filepath: str, bucket: str, key: str) -> Tuple[str, str]:
         blob = aws.resource("s3").Bucket(bucket).Object(key)
@@ -31,6 +30,11 @@ class S3BlobStore(BlobStore):
         self.put(bucket, key, data)
         assert s3_etag == blob.e_tag.strip("\"")
         return s3_etag, gs_crc32c
+
+    def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
+        aws_tags = [dict(Key=key, Value=val)
+                    for key, val in tags.items()]
+        aws.client("s3").put_object_tagging(Bucket=bucket_name, Key=key, Tagging=dict(TagSet=aws_tags))
 
     def list(self, bucket: str, prefix="") -> Generator[str, None, None]:
         for item in aws.resource("s3").Bucket(bucket).objects.filter(Prefix=prefix):
