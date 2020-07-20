@@ -50,10 +50,13 @@ def list_submission(args: argparse.Namespace):
         print(f"No submission found for {args.submission_id}")
 
 @staging_cli.command("sync", arguments={
-    "--dst-deployment": dict(type=str, required=True, help="destination deployment"),
+    "--dst-deployment": dict(type=str, default="gcp", help="destination deployment"),
     "--submission-id": dict(type=str, required=True, help="id of submission")
 })
 def sync_command(args: argparse.Namespace):
+    """
+    Copy all files for `submission-id` from `deployment` to `dst-deployment`.
+    """
     src = Staging[args.deployment].ssds
     dst = Staging[args.dst_deployment].ssds
     src_bucket = f"{src.blobstore.schema}{src.bucket}"
