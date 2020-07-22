@@ -52,9 +52,9 @@ class SSDSObjectTag:
 
 class AsyncPartIterator:
     def __init__(self, bucket_name, key, executor: ThreadPoolExecutor=None):
-        self.size: Optional[int] = None
-        self.chunk_size: Optional[int] = None
-        self._number_of_parts: Optional[int] = None
+        self.size = 0
+        self.chunk_size = 0
+        self._number_of_parts = 0
 
     def __len__(self):
         return self._number_of_parts
