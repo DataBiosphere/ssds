@@ -4,39 +4,16 @@ import warnings
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from math import ceil
-from typing import Dict, Tuple, Generator
+from typing import Dict, Generator
 
 import gs_chunked_io as gscio
 from google.cloud.storage import Client
 
-from ssds import checksum
 from ssds.blobstore import BlobStore, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size
 
 
 class GSBlobStore(BlobStore):
     schema = "gs://"
-
-    def _upload_multipart(self, filepath: str, bucket_name: str, key: str, part_size: int) -> Tuple[str, str]:
-        _crc32c = checksum.crc32c(b"")
-        _s3_etags = []
-
-        def _put_part(part_number: int, part_name: str, data: bytes):
-            _crc32c.update(bytes(data))
-            _s3_etags.append(checksum.md5(data).hexdigest())
-
-        bucket = _client().bucket(bucket_name)
-        with gscio.writer.Writer(key, bucket, part_size, part_callback=_put_part) as writer:
-            with open(filepath, "rb") as fh:
-                while True:
-                    data = fh.read(part_size)
-                    if data:
-                        writer.write(data)
-                    else:
-                        break
-
-        s3_etag = checksum.compute_composite_etag(_s3_etags)
-        gs_crc32c = _crc32c.google_storage_crc32c()
-        return s3_etag, gs_crc32c
 
     def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
         blob = _client().bucket(bucket_name).get_blob(key)
@@ -86,6 +63,7 @@ class GSAsyncPartIterator(AsyncPartIterator):
 
 class GSMultipartWriter(MultipartWriter):
     def __init__(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None):
+        super().__init__()
         bucket = _client().bucket(bucket_name)
         self._writer = gscio.AsyncWriter(key, bucket, executor=executor)
 

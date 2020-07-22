@@ -2,27 +2,13 @@ import io
 from math import ceil
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from typing import Set, List, Dict, Tuple, Union, Optional, Generator
+from typing import Set, List, Dict, Union, Generator
 
-from ssds import aws, checksum
+from ssds import aws
 from ssds.blobstore import BlobStore, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size
 
 class S3BlobStore(BlobStore):
     schema = "s3://"
-
-    def _upload_multipart(self, filepath: str, bucket: str, key: str, part_size: int) -> Tuple[str, str]:
-        with S3MultipartWriter(bucket, key) as uploader:
-            part_number = 0
-            crc32c = checksum.crc32c(b"")
-            with open(filepath, "rb") as fh:
-                while True:
-                    data = fh.read(part_size)
-                    if not data:
-                        break
-                    crc32c.update(data)
-                    uploader.put_part(Part(part_number, data))
-                    part_number += 1
-        return uploader.s3_etag, crc32c.google_storage_crc32c()
 
     def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
         aws_tags = [dict(Key=key, Value=val)
@@ -98,7 +84,6 @@ class S3MultipartWriter(MultipartWriter):
         self.key = key
         self.mpu = aws.client("s3").create_multipart_upload(Bucket=bucket_name, Key=key)['UploadId']
         self.parts: List[Dict[str, Union[str, int]]] = list()
-        self.s3_etag: Optional[str] = None
         self._closed = False
         self._executor = executor
         self._futures: Set[Future] = set()
@@ -112,8 +97,6 @@ class S3MultipartWriter(MultipartWriter):
             PartNumber=aws_part_number,
             UploadId=self.mpu,
         )
-        computed_etag = checksum.md5(part.data).hexdigest()
-        assert computed_etag == resp['ETag'].strip("\"")
         return dict(ETag=resp['ETag'], PartNumber=aws_part_number)
 
     def put_part(self, part: Part):
@@ -154,7 +137,3 @@ class S3MultipartWriter(MultipartWriter):
                                                        Key=self.key,
                                                        MultipartUpload=dict(Parts=self.parts),
                                                        UploadId=self.mpu)
-            bin_md5 = b"".join([checksum.binascii.unhexlify(part['ETag'].strip("\""))
-                                for part in self.parts])
-            composite_etag = checksum.md5(bin_md5).hexdigest() + "-" + str(len(self.parts))
-            self.s3_etag = composite_etag
