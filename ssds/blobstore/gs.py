@@ -10,30 +10,32 @@ import gs_chunked_io as gscio
 from google.cloud.storage import Client
 
 from ssds import checksum
-from ssds.blobstore.s3 import get_s3_multipart_chunk_size
-from ssds.blobstore import BlobStore, AsyncPartIterator, Part, SSDSObjectTag, MultipartWriter
+from ssds.blobstore import BlobStore, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size
 
 
 class GSBlobStore(BlobStore):
     schema = "gs://"
 
-    def upload_object(self, filepath: str, bucket: str, key: str):
-        size = os.stat(filepath).st_size
-        chunk_size = get_s3_multipart_chunk_size(size)
-        if chunk_size >= size:
-            s3_etag, gs_crc32c = self._upload_oneshot(filepath, bucket, key)
-        else:
-            s3_etag, gs_crc32c = _upload_multipart(filepath, bucket, key, chunk_size)
-        assert gs_crc32c == self.cloud_native_checksum(bucket, key)
-        tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
-        self.put_tags(bucket, key, tags)
+    def _upload_multipart(self, filepath: str, bucket_name: str, key: str, part_size: int) -> Tuple[str, str]:
+        _crc32c = checksum.crc32c(b"")
+        _s3_etags = []
 
-    def _upload_oneshot(self, filepath: str, bucket: str, key: str) -> Tuple[str, str]:
-        with open(filepath, "rb") as fh:
-            data = fh.read()
-            gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
-            s3_etag = checksum.md5(data).hexdigest()
-            self.put(bucket, key, data)
+        def _put_part(part_number: int, part_name: str, data: bytes):
+            _crc32c.update(bytes(data))
+            _s3_etags.append(checksum.md5(data).hexdigest())
+
+        bucket = _client().bucket(bucket_name)
+        with gscio.writer.Writer(key, bucket, part_size, part_callback=_put_part) as writer:
+            with open(filepath, "rb") as fh:
+                while True:
+                    data = fh.read(part_size)
+                    if data:
+                        writer.write(data)
+                    else:
+                        break
+
+        s3_etag = checksum.compute_composite_etag(_s3_etags)
+        gs_crc32c = _crc32c.google_storage_crc32c()
         return s3_etag, gs_crc32c
 
     def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
@@ -100,25 +102,3 @@ def _client() -> Client:
     # Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
     warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
     return Client()
-
-def _upload_multipart(filepath: str, bucket_name: str, key: str, part_size: int) -> Tuple[str, str]:
-    _crc32c = checksum.crc32c(b"")
-    _s3_etags = []
-
-    def _put_part(part_number: int, part_name: str, data: bytes):
-        _crc32c.update(bytes(data))
-        _s3_etags.append(checksum.md5(data).hexdigest())
-
-    bucket = _client().bucket(bucket_name)
-    with gscio.writer.Writer(key, bucket, part_size, part_callback=_put_part) as writer:
-        with open(filepath, "rb") as fh:
-            while True:
-                data = fh.read(part_size)
-                if data:
-                    writer.write(data)
-                else:
-                    break
-
-    s3_etag = checksum.compute_composite_etag(_s3_etags)
-    gs_crc32c = _crc32c.google_storage_crc32c()
-    return s3_etag, gs_crc32c

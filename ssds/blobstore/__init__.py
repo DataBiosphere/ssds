@@ -1,6 +1,11 @@
+import os
+from math import ceil
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Optional, Generator
+from typing import Dict, Tuple, Optional, Generator
+
+from ssds import checksum
+
 
 MiB = 1024 ** 2
 
@@ -13,12 +18,24 @@ MULTIPART_THRESHOLD = AWS_MIN_CHUNK_SIZE + 1
 AWS_MAX_MULTIPART_COUNT = 10000
 """Maximum number of parts allowed in a multipart upload.  This is a limitation imposed by S3."""
 
-
 class BlobStore:
     schema: Optional[str] = None
 
     def upload_object(self, filepath: str, bucket: str, key: str):
-        raise NotImplementedError()
+        size = os.stat(filepath).st_size
+        chunk_size = get_s3_multipart_chunk_size(size)
+        if chunk_size >= size:
+            s3_etag, gs_crc32c = self._upload_oneshot(filepath, bucket, key)
+        else:
+            s3_etag, gs_crc32c = self._upload_multipart(filepath, bucket, key, chunk_size)
+        if "s3://" == self.schema:
+            assert s3_etag == self.cloud_native_checksum(bucket, key)
+        elif "gs://" == self.schema:
+            assert gs_crc32c == self.cloud_native_checksum(bucket, key)
+        else:
+            raise ValueError(f"Unsuported schema: {self.schema}")
+        tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
+        self.put_tags(bucket, key, tags)
 
     def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
         raise NotImplementedError()
@@ -42,6 +59,17 @@ class BlobStore:
         raise NotImplementedError()
 
     def multipart_writer(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "MultipartWriter":
+        raise NotImplementedError()
+
+    def _upload_oneshot(self, filepath: str, bucket: str, key: str) -> Tuple[str, str]:
+        with open(filepath, "rb") as fh:
+            data = fh.read()
+        gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
+        s3_etag = checksum.md5(data).hexdigest()
+        self.put(bucket, key, data)
+        return s3_etag, gs_crc32c
+
+    def _upload_multipart(self, filepath: str, bucket_name: str, key: str, part_size: int) -> Tuple[str, str]:
         raise NotImplementedError()
 
 Part = namedtuple("Part", "number data")
@@ -74,3 +102,12 @@ class MultipartWriter:
 
     def __exit__(self, *args, **kwargs):
         self.close()
+
+def get_s3_multipart_chunk_size(filesize: int) -> int:
+    """Returns the chunk size of the S3 multipart object, given a file's size."""
+    if filesize <= AWS_MAX_MULTIPART_COUNT * AWS_MIN_CHUNK_SIZE:
+        return AWS_MIN_CHUNK_SIZE
+    else:
+        raw_part_size = ceil(filesize / AWS_MAX_MULTIPART_COUNT)
+        part_size_in_integer_megabytes = ((raw_part_size + MiB - 1) // MiB) * MiB
+        return part_size_in_integer_megabytes
