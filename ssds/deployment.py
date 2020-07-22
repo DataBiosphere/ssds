@@ -8,20 +8,20 @@ from ssds.blobstore.gs import GSBlobStore
 
 
 class _S3Staging(SSDS):
-    blobstore = S3BlobStore()
+    blobstore_class = S3BlobStore
     bucket = "human-pangenomics"
 
 class _GSStaging(SSDS):
-    blobstore = GSBlobStore()
+    blobstore_class = GSBlobStore
     # Bucket associated with workspace `AnVIL_HPRC`
     bucket = "fc-4310e737-a388-4a10-8c9e-babe06aaf0cf"
 
 class _S3StagingTest(SSDS):
-    blobstore = S3BlobStore()
+    blobstore_class = S3BlobStore
     bucket = "org-hpp-ssds-staging-test"
 
 class _GSStagingTest(SSDS):
-    blobstore = GSBlobStore()
+    blobstore_class = GSBlobStore
     bucket = "org-hpp-ssds-staging-test"
 
 class _Release(SSDS):
@@ -29,11 +29,11 @@ class _Release(SSDS):
         raise NotImplementedError("Direct uploads to the release area are not supported.")
 
 class _S3ReleaseTest(SSDS):
-    blobstore = S3BlobStore()
+    blobstore_class = S3BlobStore
     bucket = "org-hpp-ssds-release-test"
 
 class _GSReleaseTest(SSDS):
-    blobstore = GSBlobStore()
+    blobstore_class = GSBlobStore
     bucket = "org-hpp-ssds-release-test"
 
 class Staging(Enum):
