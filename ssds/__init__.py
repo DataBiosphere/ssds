@@ -2,13 +2,18 @@ import os
 from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Tuple, Optional, Generator
 
-from ssds.blobstore import BlobStore, SSDSObjectTag
+from ssds import checksum
+from ssds.blobstore import BlobStore, get_s3_multipart_chunk_size, Part
 from ssds.blobstore.s3 import S3BlobStore
 
 
 MAX_KEY_LENGTH = 1024  # this is the maximum length for S3 and GS object names
 # GS docs: https://cloud.google.com/storage/docs/naming-objects
 # S3 docs: https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html
+
+class SSDSObjectTag:
+    SSDS_MD5 = "SSDS_MD5"
+    SSDS_CRC32C = "SSDS_CRC32C"
 
 class SSDS:
     blobstore_class = BlobStore
@@ -65,7 +70,10 @@ class SSDS:
         for ssds_key in self._upload_local_tree(root, submission_id, name):
             yield ssds_key
 
-    def _upload_local_tree(self, root: str, submission_id: str, name: str) -> Generator[str, None, None]:
+    def _upload_local_tree(self,
+                           root: str,
+                           submission_id: str,
+                           name: str) -> Generator[str, None, None]:
         root = os.path.normpath(root)
         assert root == os.path.abspath(root)
         assert " " not in name  # TODO: create regex to enforce name format?
@@ -79,10 +87,45 @@ class SSDS:
                 raise ValueError(f"Total key length must not exceed {MAX_KEY_LENGTH} characters {os.linesep}"
                                  f"{key} is too long {os.linesep}"
                                  f"Use a shorter submission name")
+
         for filepath, ssds_key in zip(filepaths, ssds_keys):
-            dst_key = f"{self.prefix}/{ssds_key}"
-            self.blobstore.upload_object(filepath, self.bucket, dst_key)
             yield ssds_key
+            dst_key = f"{self.prefix}/{ssds_key}"
+            size = os.stat(filepath).st_size
+            part_size = get_s3_multipart_chunk_size(size)
+            if part_size >= size:
+                self._upload_oneshot(filepath, dst_key)
+            else:
+                self._upload_multipart(filepath, dst_key, part_size)
+
+    def _upload_oneshot(self, filepath: str, key: str):
+        with open(filepath, "rb") as fh:
+            data = fh.read()
+        gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
+        s3_etag = checksum.md5(data).hexdigest()
+        self.blobstore.put(self.bucket, key, data)
+        tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
+        self.blobstore.put_tags(self.bucket, key, tags)
+
+    def _upload_multipart(self, filepath: str, key: str, part_size: int):
+        s3_etags = list()
+        crc32c = checksum.crc32c(b"")
+        with self.blobstore.multipart_writer(self.bucket, key) as uploader:
+            part_number = 0
+            with open(filepath, "rb") as fh:
+                while True:
+                    data = fh.read(part_size)
+                    if not data:
+                        break
+                    s3_etags.append(checksum.md5(data).hexdigest())
+                    crc32c.update(data)
+                    uploader.put_part(Part(part_number, data))
+                    part_number += 1
+
+        s3_etag = checksum.compute_composite_etag(s3_etags)
+        gs_crc32c = crc32c.google_storage_crc32c()
+        tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
+        self.blobstore.put_tags(self.bucket, key, tags)
 
     def compose_blobstore_url(self, ssds_key: str) -> str:
         return f"{self.blobstore.schema}{self.bucket}/{self.prefix}/{ssds_key}"
@@ -109,16 +152,13 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
         dst.blobstore.put(dst.bucket, key, data)
         _verify_and_tag(key)
 
-    def _finish_sync_oneshot(f: Future):
-        f.result()  # raises if future errors
-
     with ThreadPoolExecutor(max_workers=4) as e:
         for key in src.blobstore.list(src.bucket, f"{src.prefix}/{submission_id}"):
             yield key
             parts = src.blobstore.parts(src.bucket, key, executor=e)
             if 1 == len(parts):
                 f = e.submit(_sync_oneshot, key, list(parts)[0].data)
-                f.add_done_callback(_finish_sync_oneshot)
+                f.add_done_callback(lambda f: f.result())  # raise exceptions encountered during future execution
             else:
                 with dst.blobstore.multipart_writer(dst.bucket, key, executor=e) as writer:
                     for part in parts:

@@ -2,9 +2,7 @@ import os
 from math import ceil
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Tuple, Optional, Generator
-
-from ssds import checksum
+from typing import Dict, Optional, Generator
 
 
 MiB = 1024 ** 2
@@ -20,46 +18,6 @@ AWS_MAX_MULTIPART_COUNT = 10000
 
 class BlobStore:
     schema: Optional[str] = None
-
-    def upload_object(self, filepath: str, bucket: str, key: str):
-        size = os.stat(filepath).st_size
-        chunk_size = get_s3_multipart_chunk_size(size)
-        if chunk_size >= size:
-            s3_etag, gs_crc32c = self._upload_oneshot(filepath, bucket, key)
-        else:
-            s3_etag, gs_crc32c = self._upload_multipart(filepath, bucket, key, chunk_size)
-        if "s3://" == self.schema:
-            assert s3_etag == self.cloud_native_checksum(bucket, key)
-        elif "gs://" == self.schema:
-            assert gs_crc32c == self.cloud_native_checksum(bucket, key)
-        else:
-            raise ValueError(f"Unsuported schema: {self.schema}")
-        tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
-        self.put_tags(bucket, key, tags)
-
-    def _upload_oneshot(self, filepath: str, bucket: str, key: str) -> Tuple[str, str]:
-        with open(filepath, "rb") as fh:
-            data = fh.read()
-        gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
-        s3_etag = checksum.md5(data).hexdigest()
-        self.put(bucket, key, data)
-        return s3_etag, gs_crc32c
-
-    def _upload_multipart(self, filepath: str, bucket_name: str, key: str, part_size: int) -> Tuple[str, str]:
-        s3_etags = list()
-        crc32c = checksum.crc32c(b"")
-        with self.multipart_writer(bucket_name, key) as uploader:
-            part_number = 0
-            with open(filepath, "rb") as fh:
-                while True:
-                    data = fh.read(part_size)
-                    if not data:
-                        break
-                    s3_etags.append(checksum.md5(data).hexdigest())
-                    crc32c.update(data)
-                    uploader.put_part(Part(part_number, data))
-                    part_number += 1
-        return checksum.compute_composite_etag(s3_etags), crc32c.google_storage_crc32c()
 
     def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
         raise NotImplementedError()
@@ -86,10 +44,6 @@ class BlobStore:
         raise NotImplementedError()
 
 Part = namedtuple("Part", "number data")
-
-class SSDSObjectTag:
-    SSDS_MD5 = "SSDS_MD5"
-    SSDS_CRC32C = "SSDS_CRC32C"
 
 class AsyncPartIterator:
     def __init__(self, bucket_name, key, executor: ThreadPoolExecutor=None):
