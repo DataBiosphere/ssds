@@ -19,7 +19,9 @@ class TestStagingCLI(unittest.TestCase):
             args = Namespace(submission_id="foo", name="bar", path="asf", deployment="default")
             staging_cli.upload(args)
             expected_path = os.path.abspath(os.path.normpath(args.path))
-            mock_staging.upload.assert_called_with(expected_path, args.submission_id, args.name)
+            expected_args = (expected_path, "foo", "bar")
+            actual_args = mock_staging.upload.call_args[0][:-1]  # clip off the `executor` arg
+            self.assertEqual(expected_args, actual_args)
 
     def test_list(self):
         mock_staging = Mock()

@@ -2,6 +2,7 @@
 import io
 import os
 import sys
+import time
 import unittest
 import tempfile
 from math import ceil
@@ -29,14 +30,22 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_upload(self):
         with tempfile.TemporaryDirectory() as dirname:
             root = self._prepare_local_submission_dir(dirname)
-            submission_id = f"{uuid4()}"
             submission_name = "this_is_a_test_submission"
-            with self.subTest("aws"):
-                for ssds_key in S3_SSDS.upload(root, submission_id, submission_name):
-                    print(S3_SSDS.compose_blobstore_url(ssds_key))
-            with self.subTest("gcp"):
-                for ssds_key in GS_SSDS.upload(root, submission_id, submission_name):
-                    print(GS_SSDS.compose_blobstore_url(ssds_key))
+            tests = [
+                ("aws sync", S3_SSDS, f"{uuid4()}", None),
+                ("aws async", S3_SSDS, f"{uuid4()}", ThreadPoolExecutor(max_workers=4)),
+                ("gcp sync", GS_SSDS, f"{uuid4()}", None),
+                ("gcp async", GS_SSDS, f"{uuid4()}", ThreadPoolExecutor(max_workers=4)),
+            ]
+            for test_name, ds, submission_id, executor in tests:
+                with self.subTest(test_name):
+                    start_time = time.time()
+                    for ssds_key in S3_SSDS.upload(root, submission_id, submission_name, executor):
+                        print(ssds_key)
+                    if executor:
+                        executor.shutdown()
+                    print(f"{test_name} upload duration:", time.time() - start_time)
+                    print()
 
     def test_upload_name_length_error(self):
         with tempfile.TemporaryDirectory() as dirname:
@@ -83,7 +92,8 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                     root = self._prepare_local_submission_dir(dirname)
                     submission_id = f"{uuid4()}"
                     submission_name = "this_is_a_test_submission_for_sync"
-                    uploaded_keys = [ssds_key for ssds_key in src.upload(root, submission_id, submission_name)]
+                    with ThreadPoolExecutor(max_workers=4) as e:
+                        uploaded_keys = [ssds_key for ssds_key in src.upload(root, submission_id, submission_name, e)]
                 for key in ssds.sync(submission_id, src, dst):
                     pass
                 synced_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
@@ -252,7 +262,6 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_s3_multipart_writer(self):
         from ssds.blobstore.s3 import S3MultipartWriter, Part
-        import time
         workers = S3MultipartWriter.concurrent_uploads
         tests = [("synchronous", None), ("asynchronous", ThreadPoolExecutor(max_workers=workers))]
         expected_data = os.urandom(1024**2 * 130)
