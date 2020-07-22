@@ -1,5 +1,5 @@
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Tuple, Optional, Generator
 
 from ssds.blobstore import BlobStore, SSDSObjectTag
@@ -94,22 +94,33 @@ def _list_tree(root) -> Generator[str, None, None]:
             yield os.path.abspath(relpath)
 
 def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]:
+    def _verify_and_tag(key: str):
+        src_tags = src.blobstore.get_tags(src.bucket, key)
+        dst_checksum = dst.blobstore.cloud_native_checksum(dst.bucket, key)
+        if "gs://" == dst.blobstore.schema:
+            assert src_tags[SSDSObjectTag.SSDS_CRC32C] == dst_checksum
+        elif "s3://" == dst.blobstore.schema:
+            assert src_tags[SSDSObjectTag.SSDS_MD5] == dst_checksum
+        else:
+            raise RuntimeError("Unknown blobstore schema!")
+        dst.blobstore.put_tags(dst.bucket, key, src_tags)
+
+    def _sync_oneshot(key: str, data: bytes):
+        dst.blobstore.put(dst.bucket, key, data)
+        _verify_and_tag(key)
+
+    def _finish_sync_oneshot(f: Future):
+        f.result()  # raises if future errors
+
     with ThreadPoolExecutor(max_workers=4) as e:
         for key in src.blobstore.list(src.bucket, f"{src.prefix}/{submission_id}"):
             yield key
             parts = src.blobstore.parts(src.bucket, key, executor=e)
             if 1 == len(parts):
-                dst.blobstore.put(dst.bucket, key, list(parts)[0].data)
+                f = e.submit(_sync_oneshot, key, list(parts)[0].data)
+                f.add_done_callback(_finish_sync_oneshot)
             else:
                 with dst.blobstore.multipart_writer(dst.bucket, key, executor=e) as writer:
                     for part in parts:
                         writer.put_part(part)
-            src_tags = src.blobstore.get_tags(src.bucket, key)
-            dst_checksum = dst.blobstore.cloud_native_checksum(dst.bucket, key)
-            if "gs://" == dst.blobstore.schema:
-                assert src_tags[SSDSObjectTag.SSDS_CRC32C] == dst_checksum
-            elif "s3://" == dst.blobstore.schema:
-                assert src_tags[SSDSObjectTag.SSDS_MD5] == dst_checksum
-            else:
-                raise RuntimeError("Unknown blobstore schema!")
-            dst.blobstore.put_tags(dst.bucket, key, src_tags)
+                _verify_and_tag(key)
