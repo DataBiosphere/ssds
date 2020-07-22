@@ -1,35 +1,14 @@
 import io
-import os
 from math import ceil
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from typing import Any, Set, List, Dict, Tuple, Union, Optional, Generator
+from typing import Set, List, Dict, Union, Generator
 
-from ssds import aws, checksum
-from ssds.blobstore import (MiB, AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, BlobStore, AsyncPartIterator, Part,
-                            SSDSObjectTag, MultipartWriter)
+from ssds import aws
+from ssds.blobstore import BlobStore, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size
 
 class S3BlobStore(BlobStore):
     schema = "s3://"
-
-    def upload_object(self, filepath: str, bucket: str, key: str):
-        size = os.stat(filepath).st_size
-        chunk_size = get_s3_multipart_chunk_size(size)
-        if chunk_size >= size:
-            s3_etag, gs_crc32c = self._upload_oneshot(filepath, bucket, key)
-        else:
-            s3_etag, gs_crc32c = _upload_multipart(filepath, bucket, key, chunk_size)
-        assert s3_etag == self.cloud_native_checksum(bucket, key)
-        tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
-        self.put_tags(bucket, key, tags)
-
-    def _upload_oneshot(self, filepath: str, bucket: str, key: str) -> Tuple[str, str]:
-        with open(filepath, "rb") as fh:
-            data = fh.read()
-        gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
-        s3_etag = checksum.md5(data).hexdigest()
-        self.put(bucket, key, data)
-        return s3_etag, gs_crc32c
 
     def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
         aws_tags = [dict(Key=key, Value=val)
@@ -97,29 +76,6 @@ class S3AsyncPartIterator(AsyncPartIterator):
         data = self._blob.get(Range=byte_range)['Body'].read()
         return Part(part_number, data)
 
-def get_s3_multipart_chunk_size(filesize: int) -> int:
-    """Returns the chunk size of the S3 multipart object, given a file's size."""
-    if filesize <= AWS_MAX_MULTIPART_COUNT * AWS_MIN_CHUNK_SIZE:
-        return AWS_MIN_CHUNK_SIZE
-    else:
-        raw_part_size = ceil(filesize / AWS_MAX_MULTIPART_COUNT)
-        part_size_in_integer_megabytes = ((raw_part_size + MiB - 1) // MiB) * MiB
-        return part_size_in_integer_megabytes
-
-def _upload_multipart(filepath: str, bucket: str, key: str, part_size: int) -> Tuple[str, str]:
-    with S3MultipartWriter(bucket, key) as uploader:
-        part_number = 0
-        crc32c = checksum.crc32c(b"")
-        with open(filepath, "rb") as fh:
-            while True:
-                data = fh.read(part_size)
-                if not data:
-                    break
-                crc32c.update(data)
-                uploader.put_part(Part(part_number, data))
-                part_number += 1
-    return uploader.s3_etag, crc32c.google_storage_crc32c()
-
 class S3MultipartWriter(MultipartWriter):
     concurrent_uploads = 4
 
@@ -128,7 +84,6 @@ class S3MultipartWriter(MultipartWriter):
         self.key = key
         self.mpu = aws.client("s3").create_multipart_upload(Bucket=bucket_name, Key=key)['UploadId']
         self.parts: List[Dict[str, Union[str, int]]] = list()
-        self.s3_etag: Optional[str] = None
         self._closed = False
         self._executor = executor
         self._futures: Set[Future] = set()
@@ -142,8 +97,6 @@ class S3MultipartWriter(MultipartWriter):
             PartNumber=aws_part_number,
             UploadId=self.mpu,
         )
-        computed_etag = checksum.md5(part.data).hexdigest()
-        assert computed_etag == resp['ETag'].strip("\"")
         return dict(ETag=resp['ETag'], PartNumber=aws_part_number)
 
     def put_part(self, part: Part):
@@ -184,7 +137,3 @@ class S3MultipartWriter(MultipartWriter):
                                                        Key=self.key,
                                                        MultipartUpload=dict(Parts=self.parts),
                                                        UploadId=self.mpu)
-            bin_md5 = b"".join([checksum.binascii.unhexlify(part['ETag'].strip("\""))
-                                for part in self.parts])
-            composite_etag = checksum.md5(bin_md5).hexdigest() + "-" + str(len(self.parts))
-            self.s3_etag = composite_etag
