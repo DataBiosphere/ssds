@@ -11,8 +11,8 @@ MAX_KEY_LENGTH = 1024  # this is the maximum length for S3 and GS object names
 # S3 docs: https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html
 
 class SSDS:
-    blobstore: Optional[BlobStore] = None
-    bucket: Optional[str] = None
+    blobstore = BlobStore()
+    bucket = str()
     prefix = "submissions"
     _name_delimeter = "--"  # Not using "/" as name delimeter produces friendlier `aws s3` listing
 
@@ -35,7 +35,7 @@ class SSDS:
             ssds_key = key.replace(f"{self.prefix}/", "", 1)
             yield ssds_key
 
-    def get_submission_name(self, submission_id: str) -> str:
+    def get_submission_name(self, submission_id: str) -> Optional[str]:
         name = None
         for key in self.blobstore.list(self.bucket, f"{self.prefix}/{submission_id}"):
             ssds_key = key.strip(f"{self.prefix}/")
