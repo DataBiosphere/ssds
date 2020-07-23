@@ -190,6 +190,15 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         This is implicitly tested during `TestSSDS`.
         """
 
+    def test_size(self):
+        tests = [("aws", S3_SSDS.bucket, S3_SSDS.blobstore, self._put_s3_obj),
+                 ("gcp", GS_SSDS.bucket, GS_SSDS.blobstore, self._put_gs_obj)]
+        key = f"{uuid4()}"
+        for test_name, bucket, bs, upload in tests:
+            expected_size = randint(1, 10)
+            upload(bucket, key, os.urandom(expected_size))
+            self.assertEqual(expected_size, bs.size(bucket, key))
+
     def test_cloud_native_checksums(self):
         key = f"{uuid4()}"
         with self.subTest("aws"):

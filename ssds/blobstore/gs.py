@@ -38,6 +38,9 @@ class GSBlobStore(BlobStore):
         blob = _client().bucket(bucket_name).blob(key)
         blob.upload_from_file(io.BytesIO(data))
 
+    def size(self, bucket_name: str, key: str) -> int:
+        return _client().bucket(bucket_name).get_blob(key).size
+
     def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
         return _client().bucket(bucket_name).get_blob(key).crc32c
 
