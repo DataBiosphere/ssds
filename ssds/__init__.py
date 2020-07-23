@@ -78,27 +78,24 @@ class SSDS:
         assert root == os.path.abspath(root)
         assert " " not in name  # TODO: create regex to enforce name format?
         assert self._name_delimeter not in name  # TODO: create regex to enforce name format?
-        filepaths = [p for p in _list_tree(root)]
+
         dst_prefix = f"{submission_id}{self._name_delimeter}{name}"
-        ssds_keys = [f"{dst_prefix}/{os.path.relpath(p, root)}" for p in filepaths]
-        for ssds_key in ssds_keys:
+        for filepath in _list_tree(root):
+            ssds_key = f"{dst_prefix}/{os.path.relpath(filepath, root)}"
             key = f"{self.prefix}{ssds_key}"
             if MAX_KEY_LENGTH <= len(key):
                 raise ValueError(f"Total key length must not exceed {MAX_KEY_LENGTH} characters {os.linesep}"
                                  f"{key} is too long {os.linesep}"
                                  f"Use a shorter submission name")
-
-        for filepath, ssds_key in zip(filepaths, ssds_keys):
-            yield ssds_key
-            dst_key = f"{self.prefix}/{ssds_key}"
             size = os.stat(filepath).st_size
             part_size = get_s3_multipart_chunk_size(size)
             if part_size >= size:
-                self._upload_oneshot(filepath, dst_key)
+                yield self._upload_oneshot(filepath, ssds_key)
             else:
-                self._upload_multipart(filepath, dst_key, part_size)
+                yield self._upload_multipart(filepath, ssds_key, part_size)
 
-    def _upload_oneshot(self, filepath: str, key: str):
+    def _upload_oneshot(self, filepath: str, ssds_key: str) -> str:
+        key = f"{self.prefix}/{ssds_key}"
         with open(filepath, "rb") as fh:
             data = fh.read()
         gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
@@ -106,8 +103,10 @@ class SSDS:
         self.blobstore.put(self.bucket, key, data)
         tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
         self.blobstore.put_tags(self.bucket, key, tags)
+        return ssds_key
 
-    def _upload_multipart(self, filepath: str, key: str, part_size: int):
+    def _upload_multipart(self, filepath: str, ssds_key: str, part_size: int) -> str:
+        key = f"{self.prefix}/{ssds_key}"
         s3_etags = list()
         crc32c = checksum.crc32c(b"")
         with self.blobstore.multipart_writer(self.bucket, key) as uploader:
@@ -126,6 +125,7 @@ class SSDS:
         gs_crc32c = crc32c.google_storage_crc32c()
         tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
         self.blobstore.put_tags(self.bucket, key, tags)
+        return ssds_key
 
     def compose_blobstore_url(self, ssds_key: str) -> str:
         return f"{self.blobstore.schema}{self.bucket}/{self.prefix}/{ssds_key}"
