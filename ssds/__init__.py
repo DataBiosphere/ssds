@@ -92,7 +92,6 @@ class SSDS:
             if part_size >= size:
                 if executor:
                     f = executor.submit(self._upload_oneshot, filepath, ssds_key)
-                    f.add_done_callback(lambda f: f.result())  # raise exceptions encountered during future execution
                     oneshot_futures.add(f)
                 else:
                     yield self._upload_oneshot(filepath, ssds_key)
