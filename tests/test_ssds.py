@@ -9,6 +9,7 @@ from math import ceil
 from uuid import uuid4
 from random import randint
 from concurrent.futures import ThreadPoolExecutor
+from typing import List
 
 from google.cloud import storage
 
@@ -40,12 +41,17 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             for test_name, ds, submission_id, executor in tests:
                 with self.subTest(test_name):
                     start_time = time.time()
-                    for ssds_key in S3_SSDS.upload(root, submission_id, submission_name, executor):
-                        print(ssds_key)
+                    for ssds_key in ds.upload(root, submission_id, submission_name, executor):
+                        pass
                     if executor:
                         executor.shutdown()
                     print(f"{test_name} upload duration:", time.time() - start_time)
-                    print()
+                    for filepath in ssds._list_tree(root):
+                        expected_ssds_key = ds._compose_ssds_key(submission_id,
+                                                                 submission_name,
+                                                                 os.path.relpath(filepath, root))
+                        key = f"{ds.prefix}/{expected_ssds_key}"
+                        self.assertEqual(os.stat(filepath).st_size, ds.blobstore.size(ds.bucket, key))
 
     def test_upload_name_length_error(self):
         with tempfile.TemporaryDirectory() as dirname:
