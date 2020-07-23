@@ -178,16 +178,24 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
     def _sync_oneshot(key: str, data: bytes):
         dst.blobstore.put(dst.bucket, key, data)
         _verify_and_tag(key)
+        return key
 
+    oneshot_futures: Set[Future] = set()
     with ThreadPoolExecutor(max_workers=4) as e:
         for key in src.blobstore.list(src.bucket, f"{src.prefix}/{submission_id}"):
-            yield key
+            for f in oneshot_futures.copy():
+                if f.done():
+                    oneshot_futures.remove(f)
+                    yield f.result()
             parts = src.blobstore.parts(src.bucket, key, executor=e)
             if 1 == len(parts):
                 f = e.submit(_sync_oneshot, key, list(parts)[0].data)
-                f.add_done_callback(lambda f: f.result())  # raise exceptions encountered during future execution
+                oneshot_futures.add(f)
             else:
                 with dst.blobstore.multipart_writer(dst.bucket, key, executor=e) as writer:
                     for part in parts:
                         writer.put_part(part)
                 _verify_and_tag(key)
+                yield key
+        for f in as_completed(oneshot_futures):
+            yield f.result()
