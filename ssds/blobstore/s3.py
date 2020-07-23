@@ -32,6 +32,10 @@ class S3BlobStore(BlobStore):
         blob = aws.resource("s3").Bucket(bucket_name).Object(key)
         blob.upload_fileobj(io.BytesIO(data))
 
+    def size(self, bucket_name: str, key: str) -> int:
+        blob = aws.resource("s3").Bucket(bucket_name).Object(key)
+        return blob.content_length
+
     def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
         blob = aws.resource("s3").Bucket(bucket_name).Object(key)
         return blob.e_tag.strip("\"")

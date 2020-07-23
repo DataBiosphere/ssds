@@ -34,6 +34,9 @@ class BlobStore:
     def put(self, bucket_name: str, key: str, data: bytes):
         raise NotImplementedError()
 
+    def size(self, bucket_name: str, key: str) -> int:
+        raise NotImplementedError()
+
     def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
         raise NotImplementedError()
 
