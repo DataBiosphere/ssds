@@ -1,10 +1,9 @@
 import os
-from concurrent.futures import ThreadPoolExecutor, Future
-from typing import Tuple, Optional, Generator
+from concurrent.futures import ThreadPoolExecutor, Future, as_completed
+from typing import Set, Tuple, Optional, Generator
 
 from ssds import checksum
 from ssds.blobstore import BlobStore, get_s3_multipart_chunk_size, Part
-from ssds.blobstore.s3 import S3BlobStore
 
 
 MAX_KEY_LENGTH = 1024  # this is the maximum length for S3 and GS object names
@@ -55,7 +54,8 @@ class SSDS:
     def upload(self,
                root: str,
                submission_id: str,
-               name: Optional[str]=None) -> Generator[str, None, None]:
+               name: Optional[str]=None,
+               executor: Optional[ThreadPoolExecutor]=None) -> Generator[str, None, None]:
         """
         Upload files from root directory and yield ssds_key for each file.
         This returns a generator that must be iterated for uploads to occur.
@@ -67,26 +67,38 @@ class SSDS:
             name = existing_name
         elif existing_name and existing_name != name:
             raise ValueError("Cannot update name of existing submission")
-        for ssds_key in self._upload_local_tree(root, submission_id, name):
+        for ssds_key in self._upload_local_tree(root, submission_id, name, executor):
             yield ssds_key
 
     def _upload_local_tree(self,
                            root: str,
                            submission_id: str,
-                           name: str) -> Generator[str, None, None]:
+                           name: str,
+                           executor: Optional[ThreadPoolExecutor]=None) -> Generator[str, None, None]:
         root = os.path.normpath(root)
         assert root == os.path.abspath(root)
         assert " " not in name  # TODO: create regex to enforce name format?
         assert self._name_delimeter not in name  # TODO: create regex to enforce name format?
 
+        oneshot_futures: Set[Future] = set()
         for filepath in _list_tree(root):
+            for f in oneshot_futures.copy():
+                if f.done():
+                    oneshot_futures.remove(f)
+                    yield f.result()
             ssds_key = self._compose_ssds_key(submission_id, name, os.path.relpath(filepath, root))
             size = os.stat(filepath).st_size
             part_size = get_s3_multipart_chunk_size(size)
             if part_size >= size:
-                yield self._upload_oneshot(filepath, ssds_key)
+                if executor:
+                    f = executor.submit(self._upload_oneshot, filepath, ssds_key)
+                    oneshot_futures.add(f)
+                else:
+                    yield self._upload_oneshot(filepath, ssds_key)
             else:
-                yield self._upload_multipart(filepath, ssds_key, part_size)
+                yield self._upload_multipart(filepath, ssds_key, part_size, executor)
+        for f in as_completed(oneshot_futures):
+            yield f.result()
 
     def _compose_ssds_key(self, submission_id: str, submission_name: str, path: str) -> str:
         dst_prefix = f"{submission_id}{self._name_delimeter}{submission_name}"
@@ -109,11 +121,15 @@ class SSDS:
         self.blobstore.put_tags(self.bucket, key, tags)
         return ssds_key
 
-    def _upload_multipart(self, filepath: str, ssds_key: str, part_size: int) -> str:
+    def _upload_multipart(self,
+                          filepath: str,
+                          ssds_key: str,
+                          part_size: int,
+                          executor: Optional[ThreadPoolExecutor]) -> str:
         key = f"{self.prefix}/{ssds_key}"
         s3_etags = list()
         crc32c = checksum.crc32c(b"")
-        with self.blobstore.multipart_writer(self.bucket, key) as uploader:
+        with self.blobstore.multipart_writer(self.bucket, key, executor) as uploader:
             part_number = 0
             with open(filepath, "rb") as fh:
                 while True:
@@ -125,10 +141,17 @@ class SSDS:
                     uploader.put_part(Part(part_number, data))
                     part_number += 1
 
-        s3_etag = checksum.compute_composite_etag(s3_etags)
-        gs_crc32c = crc32c.google_storage_crc32c()
-        tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
-        self.blobstore.put_tags(self.bucket, key, tags)
+        def _tag():
+            s3_etag = checksum.compute_composite_etag(s3_etags)
+            gs_crc32c = crc32c.google_storage_crc32c()
+            tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
+            self.blobstore.put_tags(self.bucket, key, tags)
+
+        if executor:
+            f = executor.submit(_tag)
+            f.add_done_callback(lambda f: f.result())
+        else:
+            _tag()
         return ssds_key
 
     def compose_blobstore_url(self, ssds_key: str) -> str:

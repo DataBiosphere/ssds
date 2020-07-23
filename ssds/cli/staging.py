@@ -3,6 +3,7 @@ Upload, sync, and query staging area
 """
 import os
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 
 from ssds import sync
 from ssds.deployment import Staging
@@ -25,8 +26,9 @@ def upload(args: argparse.Namespace):
     """
     ssds = Staging[args.deployment].ssds
     root = os.path.abspath(os.path.normpath(args.path))
-    for ssds_key in ssds.upload(root, args.submission_id, args.name):
-        print(ssds.compose_blobstore_url(ssds_key))
+    with ThreadPoolExecutor(max_workers=4) as e:
+        for ssds_key in ssds.upload(root, args.submission_id, args.name, e):
+            print(ssds.compose_blobstore_url(ssds_key))
 
 @staging_cli.command("list")
 def list(args: argparse.Namespace):
