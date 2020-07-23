@@ -79,20 +79,24 @@ class SSDS:
         assert " " not in name  # TODO: create regex to enforce name format?
         assert self._name_delimeter not in name  # TODO: create regex to enforce name format?
 
-        dst_prefix = f"{submission_id}{self._name_delimeter}{name}"
         for filepath in _list_tree(root):
-            ssds_key = f"{dst_prefix}/{os.path.relpath(filepath, root)}"
-            key = f"{self.prefix}{ssds_key}"
-            if MAX_KEY_LENGTH <= len(key):
-                raise ValueError(f"Total key length must not exceed {MAX_KEY_LENGTH} characters {os.linesep}"
-                                 f"{key} is too long {os.linesep}"
-                                 f"Use a shorter submission name")
+            ssds_key = self._compose_ssds_key(submission_id, name, os.path.relpath(filepath, root))
             size = os.stat(filepath).st_size
             part_size = get_s3_multipart_chunk_size(size)
             if part_size >= size:
                 yield self._upload_oneshot(filepath, ssds_key)
             else:
                 yield self._upload_multipart(filepath, ssds_key, part_size)
+
+    def _compose_ssds_key(self, submission_id: str, submission_name: str, path: str) -> str:
+        dst_prefix = f"{submission_id}{self._name_delimeter}{submission_name}"
+        ssds_key = f"{dst_prefix}/{path}"
+        blobstore_key = f"{self.prefix}{ssds_key}"
+        if MAX_KEY_LENGTH <= len(blobstore_key):
+            raise ValueError(f"Total key length must not exceed {MAX_KEY_LENGTH} characters {os.linesep}"
+                             f"{blobstore_key} is too long {os.linesep}"
+                             f"Use a shorter submission name")
+        return ssds_key
 
     def _upload_oneshot(self, filepath: str, ssds_key: str) -> str:
         key = f"{self.prefix}/{ssds_key}"
