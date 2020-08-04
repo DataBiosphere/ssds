@@ -1,6 +1,9 @@
 import os
-from concurrent.futures import ThreadPoolExecutor, Future, as_completed
-from typing import Set, Tuple, Optional, Generator
+import contextlib
+from concurrent.futures import ThreadPoolExecutor
+from typing import Tuple, Union, Optional, Generator
+
+from gs_chunked_io.async_collections import AsyncSet
 
 from ssds import checksum
 from ssds.blobstore import BlobStore, get_s3_multipart_chunk_size, Part
@@ -55,7 +58,7 @@ class SSDS:
                root: str,
                submission_id: str,
                name: Optional[str]=None,
-               executor: Optional[ThreadPoolExecutor]=None) -> Generator[str, None, None]:
+               threads: Optional[int]=None) -> Generator[str, None, None]:
         """
         Upload files from root directory and yield ssds_key for each file.
         This returns a generator that must be iterated for uploads to occur.
@@ -67,38 +70,44 @@ class SSDS:
             name = existing_name
         elif existing_name and existing_name != name:
             raise ValueError("Cannot update name of existing submission")
-        for ssds_key in self._upload_local_tree(root, submission_id, name, executor):
+        for ssds_key in self._upload_local_tree(root, submission_id, name, threads):
             yield ssds_key
 
     def _upload_local_tree(self,
                            root: str,
                            submission_id: str,
                            name: str,
-                           executor: Optional[ThreadPoolExecutor]=None) -> Generator[str, None, None]:
+                           threads: Optional[int]=None) -> Generator[str, None, None]:
         root = os.path.normpath(root)
         assert root == os.path.abspath(root)
         assert " " not in name  # TODO: create regex to enforce name format?
         assert self._name_delimeter not in name  # TODO: create regex to enforce name format?
 
-        oneshot_futures: Set[Future] = set()
-        for filepath in _list_tree(root):
-            for f in oneshot_futures.copy():
-                if f.done():
-                    oneshot_futures.remove(f)
-                    yield f.result()
-            ssds_key = self._compose_ssds_key(submission_id, name, os.path.relpath(filepath, root))
-            size = os.stat(filepath).st_size
-            part_size = get_s3_multipart_chunk_size(size)
-            if part_size >= size:
-                if executor:
-                    f = executor.submit(self._upload_oneshot, filepath, ssds_key)
-                    oneshot_futures.add(f)
+        if threads is None:
+            e: Union[contextlib.AbstractContextManager, ThreadPoolExecutor] = contextlib.nullcontext()
+            oneshot_uploads: Optional[AsyncSet] = None
+        else:
+            e = ThreadPoolExecutor(max_workers=threads)
+            oneshot_uploads = AsyncSet(e, concurrency=threads)
+
+        with e:
+            for filepath in _list_tree(root):
+                if oneshot_uploads is not None:
+                    for ssds_key in oneshot_uploads.consume_finished():
+                        yield ssds_key
+                ssds_key = self._compose_ssds_key(submission_id, name, os.path.relpath(filepath, root))
+                size = os.stat(filepath).st_size
+                part_size = get_s3_multipart_chunk_size(size)
+                if part_size >= size:
+                    if oneshot_uploads is not None:
+                        oneshot_uploads.put(self._upload_oneshot, filepath, ssds_key)
+                    else:
+                        yield self._upload_oneshot(filepath, ssds_key)
                 else:
-                    yield self._upload_oneshot(filepath, ssds_key)
-            else:
-                yield self._upload_multipart(filepath, ssds_key, part_size, executor)
-        for f in as_completed(oneshot_futures):
-            yield f.result()
+                    yield self._upload_multipart(filepath, ssds_key, part_size, threads)
+            if oneshot_uploads is not None:
+                for ssds_key in oneshot_uploads.consume():
+                    yield ssds_key
 
     def _compose_ssds_key(self, submission_id: str, submission_name: str, path: str) -> str:
         dst_prefix = f"{submission_id}{self._name_delimeter}{submission_name}"
@@ -125,11 +134,11 @@ class SSDS:
                           filepath: str,
                           ssds_key: str,
                           part_size: int,
-                          executor: Optional[ThreadPoolExecutor]) -> str:
+                          threads: Optional[int]) -> str:
         key = f"{self.prefix}/{ssds_key}"
         s3_etags = list()
         crc32c = checksum.crc32c(b"")
-        with self.blobstore.multipart_writer(self.bucket, key, executor) as uploader:
+        with self.blobstore.multipart_writer(self.bucket, key, threads) as uploader:
             part_number = 0
             with open(filepath, "rb") as fh:
                 while True:
@@ -147,11 +156,8 @@ class SSDS:
             tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
             self.blobstore.put_tags(self.bucket, key, tags)
 
-        if executor:
-            f = executor.submit(_tag)
-            f.add_done_callback(lambda f: f.result())
-        else:
-            _tag()
+        # TODO: parallelize tagging
+        _tag()
         return ssds_key
 
     def compose_blobstore_url(self, ssds_key: str) -> str:
@@ -180,22 +186,21 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
         _verify_and_tag(key)
         return key
 
-    oneshot_futures: Set[Future] = set()
-    with ThreadPoolExecutor(max_workers=4) as e:
+    # TODO: pass in threads as optional parameter
+    threads = 4
+    with ThreadPoolExecutor(max_workers=threads) as e:
+        oneshot_uploads = AsyncSet(e, threads)
         for key in src.blobstore.list(src.bucket, f"{src.prefix}/{submission_id}"):
-            for f in oneshot_futures.copy():
-                if f.done():
-                    oneshot_futures.remove(f)
-                    yield f.result()
-            parts = src.blobstore.parts(src.bucket, key, executor=e)
+            for synced_key in oneshot_uploads.consume_finished():
+                yield synced_key
+            parts = src.blobstore.parts(src.bucket, key, threads=threads)
             if 1 == len(parts):
-                f = e.submit(_sync_oneshot, key, list(parts)[0].data)
-                oneshot_futures.add(f)
+                oneshot_uploads.put(_sync_oneshot, key, list(parts)[0].data)
             else:
-                with dst.blobstore.multipart_writer(dst.bucket, key, executor=e) as writer:
+                with dst.blobstore.multipart_writer(dst.bucket, key, threads=threads) as writer:
                     for part in parts:
                         writer.put_part(part)
                 _verify_and_tag(key)
                 yield key
-        for f in as_completed(oneshot_futures):
-            yield f.result()
+        for synced_key in oneshot_uploads.consume():
+            yield synced_key

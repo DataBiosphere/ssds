@@ -1,7 +1,5 @@
-import os
 from math import ceil
 from collections import namedtuple
-from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Optional, Generator
 
 
@@ -43,16 +41,16 @@ class BlobStore:
     def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
         raise NotImplementedError()
 
-    def parts(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "AsyncPartIterator":
+    def parts(self, bucket_name: str, key: str, threads: Optional[int]=None) -> "AsyncPartIterator":
         raise NotImplementedError()
 
-    def multipart_writer(self, bucket_name: str, key: str, executor: ThreadPoolExecutor=None) -> "MultipartWriter":
+    def multipart_writer(self, bucket_name: str, key: str, threads: Optional[int]=None) -> "MultipartWriter":
         raise NotImplementedError()
 
 Part = namedtuple("Part", "number data")
 
 class AsyncPartIterator:
-    def __init__(self, bucket_name, key, executor: ThreadPoolExecutor=None):
+    def __init__(self, bucket_name, key, threads: Optional[int]=None):
         self.size = 0
         self.chunk_size = 0
         self._number_of_parts = 0
