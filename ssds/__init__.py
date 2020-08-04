@@ -1,4 +1,6 @@
 import os
+import sys
+import logging
 import contextlib
 from concurrent.futures import ThreadPoolExecutor
 from typing import Tuple, Union, Optional, Generator
@@ -8,6 +10,8 @@ from gs_chunked_io.async_collections import AsyncSet
 from ssds import checksum
 from ssds.blobstore import BlobStore, get_s3_multipart_chunk_size, Part
 
+
+logger = logging.getLogger(__name__)
 
 MAX_KEY_LENGTH = 1024  # this is the maximum length for S3 and GS object names
 # GS docs: https://cloud.google.com/storage/docs/naming-objects
@@ -39,6 +43,12 @@ class SSDS:
             if submission_id != prev_submission_id:
                 yield submission_id, submission_name
                 prev_submission_id = submission_id
+
+    def __repr__(self) -> str:
+        return self.__class__.__name__
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
     def list_submission(self, submission_id: str) -> Generator[str, None, None]:
         for key in self.blobstore.list(self.bucket, f"{self.prefix}/{submission_id}"):
@@ -181,26 +191,47 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
             raise RuntimeError("Unknown blobstore schema!")
         dst.blobstore.put_tags(dst.bucket, key, src_tags)
 
-    def _sync_oneshot(key: str, data: bytes):
-        dst.blobstore.put(dst.bucket, key, data)
-        _verify_and_tag(key)
-        return key
+    def _already_synced(key: str) -> bool:
+        if not dst.blobstore.exists(dst.bucket, key):
+            return False
+        else:
+            src_tags = src.blobstore.get_tags(src.bucket, key)
+            dst_tags = dst.blobstore.get_tags(dst.bucket, key)
+            if dst_tags != src_tags:
+                return False
+            else:
+                return True
+
+    def _sync_oneshot(key: str, data: bytes) -> Optional[str]:
+        if not _already_synced(key):
+            logger.info(f"syncing {key} from {src} to {dst}")
+            dst.blobstore.put(dst.bucket, key, data)
+            _verify_and_tag(key)
+            return key
+        else:
+            logger.info(f"already-synced {key} from {src} to {dst}")
+            return None
 
     # TODO: pass in threads as optional parameter
-    threads = 4
+    threads = 3
     with ThreadPoolExecutor(max_workers=threads) as e:
         oneshot_uploads = AsyncSet(e, threads)
         for key in src.blobstore.list(src.bucket, f"{src.prefix}/{submission_id}"):
-            for synced_key in oneshot_uploads.consume_finished():
-                yield synced_key
             parts = src.blobstore.parts(src.bucket, key, threads=threads)
             if 1 == len(parts):
                 oneshot_uploads.put(_sync_oneshot, key, list(parts)[0].data)
             else:
-                with dst.blobstore.multipart_writer(dst.bucket, key, threads=threads) as writer:
-                    for part in parts:
-                        writer.put_part(part)
-                _verify_and_tag(key)
-                yield key
+                if not _already_synced(key):
+                    logger.info(f"syncing {key} from {src} to {dst}")
+                    with dst.blobstore.multipart_writer(dst.bucket, key, threads=threads) as writer:
+                        for part in parts:
+                            writer.put_part(part)
+                    _verify_and_tag(key)
+                    yield key
+                else:
+                    logger.info(f"already-synced {key} from {src} to {dst}")
+            for synced_key in oneshot_uploads.consume_finished():
+                yield synced_key
         for synced_key in oneshot_uploads.consume():
-            yield synced_key
+            if synced_key is not None:
+                yield synced_key

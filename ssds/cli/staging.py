@@ -2,9 +2,11 @@
 Upload, sync, and query staging area
 """
 import os
+import sys
+import logging
 import argparse
 
-from ssds import sync
+import ssds
 from ssds.deployment import Staging
 from ssds.cli import dispatch
 
@@ -59,10 +61,10 @@ def sync_command(args: argparse.Namespace):
     """
     src = Staging[args.deployment].ssds
     dst = Staging[args.dst_deployment].ssds
-    src_bucket = f"{src.blobstore.schema}{src.bucket}"
-    dst_bucket = f"{dst.blobstore.schema}{dst.bucket}"
-    for key in sync(args.submission_id, src, dst):
-        print(f"Syncing: {src_bucket}/{key} -> {dst_bucket}/{key}")
+    ssds.logger.level = logging.INFO
+    ssds.logger.addHandler(logging.StreamHandler(sys.stdout))
+    for _ in ssds.sync(args.submission_id, src, dst):
+        pass
 
 @staging_cli.command("bucket")
 def get_bucket(args: argparse.Namespace):

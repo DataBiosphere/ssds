@@ -3,6 +3,7 @@ import io
 import os
 import sys
 import time
+import logging
 import unittest
 import tempfile
 from math import ceil
@@ -21,6 +22,9 @@ from ssds.blobstore.s3 import S3BlobStore, S3AsyncPartIterator, get_s3_multipart
 from ssds.blobstore.gs import GSBlobStore, GSAsyncPartIterator
 from tests import infra
 
+
+ssds.logger.level = logging.INFO
+ssds.logger.addHandler(logging.StreamHandler(sys.stdout))
 
 S3_SSDS = _S3StagingTest()
 GS_SSDS = _GSStagingTest()
@@ -100,14 +104,17 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                                                                          submission_id,
                                                                          submission_name,
                                                                          threads=4)]
-                for key in ssds.sync(submission_id, src, dst):
-                    pass
+                synced_keys = [key[len(f"{src.prefix}/"):] for key in ssds.sync(submission_id, src, dst)]
                 dst_listed_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
+                self.assertEqual(sorted(uploaded_keys), sorted(synced_keys))
                 self.assertEqual(sorted(uploaded_keys), sorted(dst_listed_keys))
                 for ssds_key in dst_listed_keys:
                     a = src.blobstore.get(S3_SSDS.bucket, f"{S3_SSDS.prefix}/{ssds_key}")
                     b = dst.blobstore.get(GS_SSDS.bucket, f"{GS_SSDS.prefix}/{ssds_key}")
                     self.assertEqual(a, b)
+                with self.subTest("test no resync"):
+                    synced_keys = [key for key in ssds.sync(submission_id, src, dst) if key]
+                    self.assertEqual(synced_keys, list())
 
     def _prepare_local_submission_dir(self, dirname: str, single_file=False) -> str:
         root = os.path.join(dirname, "test_submission")
