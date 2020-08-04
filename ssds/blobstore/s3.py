@@ -1,8 +1,11 @@
 import io
+import requests
 from math import ceil
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from typing import Set, List, Dict, Union, Generator
+
+import botocore.exceptions
 
 from ssds import aws
 from ssds.blobstore import BlobStore, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size
@@ -31,6 +34,16 @@ class S3BlobStore(BlobStore):
     def put(self, bucket_name: str, key: str, data: bytes):
         blob = aws.resource("s3").Bucket(bucket_name).Object(key)
         blob.upload_fileobj(io.BytesIO(data))
+
+    def exists(self, bucket_name: str, key: str) -> bool:
+        try:
+            self.size(bucket_name, key)
+            return True
+        except botocore.exceptions.ClientError as e:
+            if str(e.response['Error']['Code']) == str(requests.codes.not_found):
+                return False
+            else:
+                raise
 
     def size(self, bucket_name: str, key: str) -> int:
         blob = aws.resource("s3").Bucket(bucket_name).Object(key)

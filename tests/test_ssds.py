@@ -255,6 +255,16 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
             blobstore.put_tags(bucket_name, key, tags)
             self.assertEqual(tags, blobstore.get_tags(bucket_name, key))
 
+    def test_exists(self):
+        key = f"{uuid4()}"
+        tests = [("aws", S3_SSDS.blobstore, S3_SSDS.bucket, self._put_s3_obj),
+                 ("gcp", GS_SSDS.blobstore, GS_SSDS.bucket, self._put_gs_obj)]
+        for replica_name, blobstore, bucket_name, upload in tests:
+            with self.subTest(replica=replica_name):
+                self.assertFalse(blobstore.exists(bucket_name, key))
+                upload(bucket_name, key, b"")
+                self.assertTrue(blobstore.exists(bucket_name, key))
+
     def _put_s3_obj(self, bucket, key, data):
         blob = ssds.aws.resource("s3").Bucket(bucket).Object(key)
         blob.upload_fileobj(io.BytesIO(data))
