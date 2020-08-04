@@ -38,6 +38,10 @@ class GSBlobStore(BlobStore):
         blob = _client().bucket(bucket_name).blob(key)
         blob.upload_from_file(io.BytesIO(data))
 
+    def exists(self, bucket_name: str, key: str) -> bool:
+        blob = _client().bucket(bucket_name).blob(key)
+        return blob.exists()
+
     def size(self, bucket_name: str, key: str) -> int:
         return _client().bucket(bucket_name).get_blob(key).size
 
