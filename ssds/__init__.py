@@ -156,11 +156,7 @@ class SSDS:
             tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
             self.blobstore.put_tags(self.bucket, key, tags)
 
-        # if executor:
-        #     f = executor.submit(_tag)
-        #     f.add_done_callback(lambda f: f.result())
-        # else:
-        #     _tag()
+        # TODO: parallelize tagging
         _tag()
         return ssds_key
 
