@@ -20,7 +20,7 @@ class TestStagingCLI(unittest.TestCase):
             staging_cli.upload(args)
             expected_path = os.path.abspath(os.path.normpath(args.path))
             expected_args = (expected_path, "foo", "bar")
-            actual_args = mock_staging.upload.call_args[0][:-1]  # clip off the `executor` arg
+            actual_args = mock_staging.upload.call_args[0]
             self.assertEqual(expected_args, actual_args)
 
     def test_list(self):

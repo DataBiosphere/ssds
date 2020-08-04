@@ -8,8 +8,6 @@ import tempfile
 from math import ceil
 from uuid import uuid4
 from random import randint
-from concurrent.futures import ThreadPoolExecutor
-from typing import List
 
 from google.cloud import storage
 
@@ -34,17 +32,15 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             submission_name = "this_is_a_test_submission"
             tests = [
                 ("aws sync", S3_SSDS, f"{uuid4()}", None),
-                ("aws async", S3_SSDS, f"{uuid4()}", ThreadPoolExecutor(max_workers=4)),
+                ("aws async", S3_SSDS, f"{uuid4()}", 4),
                 ("gcp sync", GS_SSDS, f"{uuid4()}", None),
-                ("gcp async", GS_SSDS, f"{uuid4()}", ThreadPoolExecutor(max_workers=4)),
+                ("gcp async", GS_SSDS, f"{uuid4()}", 4),
             ]
-            for test_name, ds, submission_id, executor in tests:
+            for test_name, ds, submission_id, threads in tests:
                 with self.subTest(test_name):
                     start_time = time.time()
-                    for ssds_key in ds.upload(root, submission_id, submission_name, executor):
+                    for ssds_key in ds.upload(root, submission_id, submission_name, threads):
                         pass
-                    if executor:
-                        executor.shutdown()
                     print(f"{test_name} upload duration:", time.time() - start_time)
                     for filepath in ssds._list_tree(root):
                         expected_ssds_key = ds._compose_ssds_key(submission_id,
@@ -90,21 +86,25 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                     print(S3_SSDS.compose_blobstore_url(ssds_key))
 
     def test_sync(self):
-        tests = [("aws -> gcp", S3_SSDS, GS_SSDS),
-                 ("gcp -> aws", GS_SSDS, S3_SSDS)]
+        tests = [
+            ("aws -> gcp", S3_SSDS, GS_SSDS),
+            ("gcp -> aws", GS_SSDS, S3_SSDS)
+        ]
         for test_name, src, dst in tests:
             with self.subTest(test_name):
                 with tempfile.TemporaryDirectory() as dirname:
                     root = self._prepare_local_submission_dir(dirname)
                     submission_id = f"{uuid4()}"
                     submission_name = "this_is_a_test_submission_for_sync"
-                    with ThreadPoolExecutor(max_workers=4) as e:
-                        uploaded_keys = [ssds_key for ssds_key in src.upload(root, submission_id, submission_name, e)]
+                    uploaded_keys = [ssds_key for ssds_key in src.upload(root,
+                                                                         submission_id,
+                                                                         submission_name,
+                                                                         threads=4)]
                 for key in ssds.sync(submission_id, src, dst):
                     pass
-                synced_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
-                self.assertEqual(sorted(uploaded_keys), sorted(synced_keys))
-                for ssds_key in synced_keys:
+                dst_listed_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
+                self.assertEqual(sorted(uploaded_keys), sorted(dst_listed_keys))
+                for ssds_key in dst_listed_keys:
                     a = src.blobstore.get(S3_SSDS.bucket, f"{S3_SSDS.prefix}/{ssds_key}")
                     b = dst.blobstore.get(GS_SSDS.bucket, f"{GS_SSDS.prefix}/{ssds_key}")
                     self.assertEqual(a, b)
@@ -240,7 +240,7 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
             with self.subTest(replica_name):
                 upload(bucket_name, key, expected_data)
                 count = 0
-                for part_number, data in part_iterator(bucket_name, key):
+                for part_number, data in part_iterator(bucket_name, key, threads=1):
                     self.assertEqual(expected_parts[part_number], data)
                     count += 1
                 self.assertEqual(number_of_parts, count)
@@ -278,23 +278,19 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_s3_multipart_writer(self):
         from ssds.blobstore.s3 import S3MultipartWriter, Part
-        workers = S3MultipartWriter.concurrent_uploads
-        tests = [("synchronous", None), ("asynchronous", ThreadPoolExecutor(max_workers=workers))]
         expected_data = os.urandom(1024**2 * 130)
-        for test_name, executor in tests:
-            with self.subTest(test_name):
+        for threads in [None, 1, 2, 3]:
+            with self.subTest(threads=threads):
                 chunk_size = get_s3_multipart_chunk_size(len(expected_data))
                 number_of_chunks = ceil(len(expected_data) / chunk_size)
                 key = f"{uuid4()}"
                 start_time = time.time()
-                with S3MultipartWriter(S3_SSDS.bucket, key, executor) as writer:
+                with S3MultipartWriter(S3_SSDS.bucket, key, threads) as writer:
                     for i in range(number_of_chunks):
                         part = Part(number=i,
                                     data=expected_data[i * chunk_size: (i + 1) * chunk_size])
                         writer.put_part(part)
-                if executor:
-                    executor.shutdown()
-                print("Multipart upload duration", test_name, time.time() - start_time)
+                print(f"upload duration threads={threads}", time.time() - start_time)
                 retrieved_data = ssds.aws.resource("s3").Bucket(S3_SSDS.bucket).Object(key).get()['Body'].read()
                 self.assertEqual(expected_data, retrieved_data)
 
