@@ -3,7 +3,7 @@ import typing
 import binascii
 from hashlib import md5
 
-import crc32c as google_crc32c
+import google_crc32c
 
 class crc32c:
     def __init__(self, data: bytes=None):
