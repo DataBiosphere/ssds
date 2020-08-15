@@ -130,6 +130,8 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             os.mkdir(subdir2)
             os.mkdir(subsubdir)
             for i in range(2):
+                with open(os.path.join(root, f"zero_byte_file{i}.dat"), "wb") as fh:
+                    fh.write(b"")
                 with open(os.path.join(root, f"file{i}.dat"), "wb") as fh:
                     fh.write(os.urandom(200))
                 with open(os.path.join(subdir1, f"file{i}.dat"), "wb") as fh:

@@ -61,14 +61,20 @@ class GSAsyncPartIterator(AsyncPartIterator):
         self._blob = _client().bucket(bucket_name).get_blob(key)
         self.size = self._blob.size
         self.chunk_size = get_s3_multipart_chunk_size(self.size)
-        self._number_of_parts = ceil(self.size / self.chunk_size)
+        self._number_of_parts = ceil(self.size / self.chunk_size) if 0 < self.size else 1
         self._threads = threads
 
     def __iter__(self) -> Generator[Part, None, None]:
-        for chunk_number, data in gscio.for_each_chunk_async(self._blob,
-                                                             self.chunk_size,
-                                                             threads=self._threads):
-            yield Part(chunk_number, data)
+        if 1 == self._number_of_parts:
+            # TODO: remove this branch when gs-chunked-io supports zero byte files
+            data = io.BytesIO()
+            self._blob.download_to_file(data)
+            yield Part(0, data.getvalue())
+        else:
+            for chunk_number, data in gscio.for_each_chunk_async(self._blob,
+                                                                 self.chunk_size,
+                                                                 threads=self._threads):
+                yield Part(chunk_number, data)
 
 class _MonkeyPatchedPartUploader(gscio.Writer):
     def put_part(self, part_number: int, data: bytes):

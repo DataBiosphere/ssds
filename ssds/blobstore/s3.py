@@ -67,7 +67,7 @@ class S3AsyncPartIterator(AsyncPartIterator):
         self._blob = aws.resource("s3").Bucket(bucket_name).Object(key)
         self.size = self._blob.content_length
         self.chunk_size = get_s3_multipart_chunk_size(self.size)
-        self._number_of_parts = ceil(self.size / self.chunk_size)
+        self._number_of_parts = ceil(self.size / self.chunk_size) if 0 < self.size else 1
         self._threads = threads
 
     def __iter__(self) -> Generator[Part, None, None]:
@@ -84,9 +84,13 @@ class S3AsyncPartIterator(AsyncPartIterator):
                     yield part
 
     def _get_part(self, part_number: int) -> Part:
-        offset = part_number * self.chunk_size
-        byte_range = f"bytes={offset}-{offset + self.chunk_size - 1}"
-        data = self._blob.get(Range=byte_range)['Body'].read()
+        if 1 == self._number_of_parts:
+            assert 0 == part_number
+            data = self._blob.get()['Body'].read()
+        else:
+            offset = part_number * self.chunk_size
+            byte_range = f"bytes={offset}-{offset + self.chunk_size - 1}"
+            data = self._blob.get(Range=byte_range)['Body'].read()
         return Part(part_number, data)
 
 class S3MultipartWriter(MultipartWriter):
