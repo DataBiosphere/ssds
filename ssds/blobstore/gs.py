@@ -66,6 +66,7 @@ class GSAsyncPartIterator(AsyncPartIterator):
 
     def __iter__(self) -> Generator[Part, None, None]:
         if 1 == self._number_of_parts:
+            # TODO: remove this branch when gs-chunked-io supports zero byte files
             data = io.BytesIO()
             self._blob.download_to_file(data)
             yield Part(0, data.getvalue())
