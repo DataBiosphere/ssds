@@ -9,6 +9,8 @@ from gs_chunked_io.async_collections import AsyncSet
 
 from ssds import checksum
 from ssds.blobstore import BlobStore, get_s3_multipart_chunk_size, Part
+from ssds.blobstore.s3 import S3BlobStore
+from ssds.blobstore.gs import GSBlobStore
 
 
 logger = logging.getLogger(__name__)
@@ -129,23 +131,37 @@ class SSDS:
                              f"Use a shorter submission name")
         return ssds_key
 
-    def _upload_oneshot(self, filepath: str, ssds_key: str) -> str:
-        key = f"{self.prefix}/{ssds_key}"
-        with open(filepath, "rb") as fh:
-            data = fh.read()
+    def _upload_oneshot(self, url: str, ssds_key: str) -> str:
+        dst_key = f"{self.prefix}/{ssds_key}"
+        if url.startswith("s3://"):
+            bucket_name, key = url[5:].split("/", 1)
+            data = S3BlobStore().get(bucket_name, key)
+        elif url.startswith("gs://"):
+            bucket_name, key = url[5:].split("/", 1)
+            data = GSBlobStore().get(bucket_name, key)
+        else:
+            with open(url, "rb") as fh:
+                data = fh.read()
         gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
         s3_etag = checksum.md5(data).hexdigest()
-        self.blobstore.put(self.bucket, key, data)
+        self.blobstore.put(self.bucket, dst_key, data)
         tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
-        self.blobstore.put_tags(self.bucket, key, tags)
+        self.blobstore.put_tags(self.bucket, dst_key, tags)
         return ssds_key
 
     def _upload_multipart(self,
-                          filepath: str,
+                          url: str,
                           ssds_key: str,
                           part_size: int,
                           threads: Optional[int]) -> str:
-        parts = _file_part_iterator(filepath)
+        if url.startswith("s3://"):
+            bucket_name, key = url[5:].split("/", 1)
+            parts = S3BlobStore().parts(bucket_name, key, threads)
+        elif url.startswith("gs://"):
+            bucket_name, key = url[5:].split("/", 1)
+            parts = GSBlobStore().parts(bucket_name, key, threads)  # type: ignore
+        else:
+            parts = _file_part_iterator(url)  # type: ignore
         key = f"{self.prefix}/{ssds_key}"
         s3_etags = list()
         crc32c = checksum.crc32c(b"")
