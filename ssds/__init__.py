@@ -106,7 +106,7 @@ class SSDS:
                     for ssds_key in oneshot_uploads.consume_finished():
                         yield ssds_key
                 ssds_key = self._compose_ssds_key(submission_id, name, os.path.relpath(filepath, root))
-                size = os.stat(filepath).st_size
+                size = os.path.getsize(filepath)
                 part_size = get_s3_multipart_chunk_size(size)
                 if part_size >= size:
                     if oneshot_uploads is not None:
