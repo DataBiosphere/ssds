@@ -51,7 +51,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                                                                  submission_name,
                                                                  os.path.relpath(filepath, root))
                         key = f"{ds.prefix}/{expected_ssds_key}"
-                        self.assertEqual(os.stat(filepath).st_size, ds.blobstore.size(ds.bucket, key))
+                        self.assertEqual(os.path.getsize(filepath), ds.blobstore.size(ds.bucket, key))
 
     def test_upload_name_length_error(self):
         with tempfile.TemporaryDirectory() as dirname:
