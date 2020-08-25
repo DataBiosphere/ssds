@@ -145,20 +145,15 @@ class SSDS:
                           ssds_key: str,
                           part_size: int,
                           threads: Optional[int]) -> str:
+        parts = _file_part_iterator(filepath)
         key = f"{self.prefix}/{ssds_key}"
         s3_etags = list()
         crc32c = checksum.crc32c(b"")
         with self.blobstore.multipart_writer(self.bucket, key, threads) as uploader:
-            part_number = 0
-            with open(filepath, "rb") as fh:
-                while True:
-                    data = fh.read(part_size)
-                    if not data:
-                        break
-                    s3_etags.append(checksum.md5(data).hexdigest())
-                    crc32c.update(data)
-                    uploader.put_part(Part(part_number, data))
-                    part_number += 1
+            for part in parts:
+                s3_etags.append(checksum.md5(part.data).hexdigest())
+                crc32c.update(part.data)
+                uploader.put_part(part)
 
         def _tag():
             s3_etag = checksum.compute_composite_etag(s3_etags)
@@ -172,6 +167,17 @@ class SSDS:
 
     def compose_blobstore_url(self, ssds_key: str) -> str:
         return f"{self.blobstore.schema}{self.bucket}/{self.prefix}/{ssds_key}"
+
+def _file_part_iterator(filepath: str) -> Generator[Part, None, None]:
+    part_number = 0
+    part_size = get_s3_multipart_chunk_size(os.path.getsize(filepath))
+    with open(filepath, "rb") as fh:
+        while True:
+            data = fh.read(part_size)
+            if not data:
+                break
+            yield Part(part_number, data)
+            part_number += 1
 
 def _list_tree(root) -> Generator[str, None, None]:
     for (dirpath, dirnames, filenames) in os.walk(root):
