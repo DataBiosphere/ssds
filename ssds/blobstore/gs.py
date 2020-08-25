@@ -98,8 +98,6 @@ class GSMultipartWriter(MultipartWriter):
 
 @lru_cache()
 def _client() -> Client:
-    if not os.environ.get('GOOGLE_CLOUD_PROJECT'):
-        raise RuntimeError("Please set the GOOGLE_CLOUD_PROJECT environment variable")
     # Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
     warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
     return Client()
