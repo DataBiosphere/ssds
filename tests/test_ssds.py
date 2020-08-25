@@ -89,6 +89,69 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                 for ssds_key in S3_SSDS.upload(root, submission_id):
                     print(S3_SSDS.compose_blobstore_url(ssds_key))
 
+    def test_copy_local_to_cloud(self):
+        submission_id = f"{uuid4()}"
+        submission_name = "this_is_a_test_submission"
+        expected_oneshot_data = os.urandom(7)
+        expected_multipart_data = os.urandom(1024 * 1024 * 160)
+        tests = [
+            ("local to aws", S3_SSDS, f"{uuid4()}", expected_oneshot_data, None),
+            ("local to aws", S3_SSDS, f"{uuid4()}", expected_multipart_data, None),
+            ("local to aws", S3_SSDS, f"{uuid4()}", expected_multipart_data, 2),
+            ("local to gcp", GS_SSDS, f"{uuid4()}", expected_oneshot_data, None),
+            ("local to gcp", GS_SSDS, f"{uuid4()}", expected_multipart_data, None),
+            ("local to gcp", GS_SSDS, f"{uuid4()}", expected_multipart_data, 2),
+        ]
+        for test_name, ds, submission_id, expected_data, threads in tests:
+            with self.subTest(test_name, size=len(expected_data), threads=threads):
+                submission_path = f"copy_{uuid4()}/fubar/snafu/file.biz"
+                with tempfile.NamedTemporaryFile() as tf:
+                    with open(tf.name, "wb") as fh:
+                        fh.write(expected_data)
+                    start_time = time.time()
+                    ds.copy(tf.name, submission_id, submission_name, submission_path, threads)
+                    print(f"{test_name} {len(expected_data)} bytes, threads={threads} upload duration:",
+                          time.time() - start_time)
+                    expected_ssds_key = ds._compose_ssds_key(submission_id,
+                                                             submission_name,
+                                                             submission_path)
+                    key = f"{ds.prefix}/{expected_ssds_key}"
+                    self.assertEqual(os.path.getsize(tf.name), ds.blobstore.size(ds.bucket, key))
+
+    def test_copy_cloud_to_cloud(self):
+        submission_id = f"{uuid4()}"
+        submission_name = "this_is_a_test_submission"
+        oneshot = dict(key=f"{uuid4()}", data=os.urandom(7))
+        multipart = dict(key=f"{uuid4()}", data=os.urandom(1024 * 1024 * 160))
+        for src_ds in [S3_SSDS, GS_SSDS]:
+            for data_config in [oneshot, multipart]:
+                src_ds.blobstore.put(src_ds.bucket, data_config['key'], data_config['data'])
+        tests = [
+            ("gcp to gcp", GS_SSDS, GS_SSDS, oneshot['key'], oneshot['data'], None),
+            ("gcp to gcp", GS_SSDS, GS_SSDS, multipart['key'], multipart['data'], 4),
+
+            ("aws to aws", S3_SSDS, S3_SSDS, oneshot['key'], oneshot['data'], None),
+            ("aws to aws", S3_SSDS, S3_SSDS, multipart['key'], multipart['data'], 4),
+
+            ("aws to gcp", S3_SSDS, GS_SSDS, oneshot['key'], oneshot['data'], None),
+            ("aws to gcp", S3_SSDS, GS_SSDS, multipart['key'], multipart['data'], 4),
+
+            ("gcp to aws", GS_SSDS, S3_SSDS, oneshot['key'], oneshot['data'], None),
+            ("gcp to aws", GS_SSDS, S3_SSDS, multipart['key'], multipart['data'], 4),
+        ]
+        for test_name, src_ds, dst_ds, src_key, expected_data, threads in tests:
+            with self.subTest(test_name, size=len(expected_data), threads=threads):
+                src_url = f"{src_ds.blobstore.schema}{src_ds.bucket}/{src_key}"
+                submission_path = f"copy_{uuid4()}/foo/bar/file.biz"
+                start_time = time.time()
+                dst_ds.copy(src_url, submission_id, submission_name, submission_path, threads)
+                print(f"{test_name} {len(expected_data)} bytes, threads={threads} upload duration:",
+                      time.time() - start_time)
+                expected_ssds_key = dst_ds._compose_ssds_key(submission_id, submission_name, submission_path)
+                dst_key = f"{dst_ds.prefix}/{expected_ssds_key}"
+                self.assertEqual(src_ds.blobstore.size(src_ds.bucket, src_key),
+                                 dst_ds.blobstore.size(dst_ds.bucket, dst_key))
+
     def test_sync(self):
         tests = [
             ("aws -> gcp", S3_SSDS, GS_SSDS),
