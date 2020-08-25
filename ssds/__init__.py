@@ -85,6 +85,25 @@ class SSDS:
         for ssds_key in self._upload_local_tree(root, submission_id, name, threads):
             yield ssds_key
 
+    def copy(self, src_url: str, submission_id: str, name: str, submission_path: str, threads: Optional[int]=None):
+        """
+        Copy files from local or cloud locations into the ssds.
+        """
+        if src_url.startswith("s3://"):
+            bucket_name, key = src_url[5:].split("/", 1)
+            size = S3BlobStore().size(bucket_name, key)
+        elif src_url.startswith("gs://"):
+            bucket_name, key = src_url[5:].split("/", 1)
+            size = GSBlobStore().size(bucket_name, key)
+        else:
+            size = os.path.getsize(src_url)
+        ssds_key = self._compose_ssds_key(submission_id, name, submission_path)
+        part_size = get_s3_multipart_chunk_size(size)
+        if part_size >= size:
+            self._upload_oneshot(src_url, ssds_key)
+        else:
+            self._upload_multipart(src_url, ssds_key, part_size, threads)
+
     def _upload_local_tree(self,
                            root: str,
                            submission_id: str,
