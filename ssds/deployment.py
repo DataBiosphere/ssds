@@ -24,6 +24,10 @@ class _GSStagingTest(SSDS):
     blobstore_class = GSBlobStore
     bucket = "org-hpp-ssds-staging-test"
 
+class _GSStagingTestTNU(SSDS):
+    blobstore_class = GSBlobStore
+    bucket = "fc-9169fcd1-92ce-4d60-9d2d-d19fd326ff10"
+
 class _Release(SSDS):
     def upload(self, *args, **kargs):
         raise NotImplementedError("Direct uploads to the release area are not supported.")
