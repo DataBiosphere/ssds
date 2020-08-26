@@ -10,7 +10,7 @@ from gs_chunked_io.async_collections import AsyncSet
 from ssds import checksum
 from ssds.blobstore import Blob, BlobStore, get_s3_multipart_chunk_size, Part
 from ssds.blobstore.s3 import S3Blob
-from ssds.blobstore.gs import GSBlob
+from ssds.blobstore.gs import GSBlob, GSBlobStore
 
 
 logger = logging.getLogger(__name__)
@@ -29,8 +29,14 @@ class SSDS:
     prefix = "submissions"
     _name_delimeter = "--"  # Not using "/" as name delimeter produces friendlier `aws s3` listing
 
-    def __init__(self):
-        self.blobstore = self.blobstore_class(self.bucket)
+    def __init__(self, google_billing_project: Optional[str]=None):
+        kwargs = dict()
+        if google_billing_project is not None:
+            if self.blobstore_class != GSBlobStore:
+                raise ValueError("google_billing_project may only be passed in for Google Storage deployments")
+            kwargs['billing_project'] = google_billing_project
+        # TODO: figure out how to use type checking on this line
+        self.blobstore = self.blobstore_class(self.bucket, **kwargs)  # type: ignore
 
     def list(self) -> Generator[Tuple[str, str], None, None]:
         listing = self.blobstore.list(self.prefix)
