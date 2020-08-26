@@ -8,9 +8,9 @@ from typing import Tuple, Union, Optional, Generator
 from gs_chunked_io.async_collections import AsyncSet
 
 from ssds import checksum
-from ssds.blobstore import BlobStore, get_s3_multipart_chunk_size, Part
-from ssds.blobstore.s3 import S3BlobStore
-from ssds.blobstore.gs import GSBlobStore
+from ssds.blobstore import Blob, BlobStore, get_s3_multipart_chunk_size, Part
+from ssds.blobstore.s3 import S3Blob
+from ssds.blobstore.gs import GSBlob
 
 
 logger = logging.getLogger(__name__)
@@ -30,10 +30,10 @@ class SSDS:
     _name_delimeter = "--"  # Not using "/" as name delimeter produces friendlier `aws s3` listing
 
     def __init__(self):
-        self.blobstore = self.blobstore_class()
+        self.blobstore = self.blobstore_class(self.bucket)
 
     def list(self) -> Generator[Tuple[str, str], None, None]:
-        listing = self.blobstore.list(self.bucket, self.prefix)
+        listing = self.blobstore.list(self.prefix)
         prev_submission_id = ""
         for key in listing:
             try:
@@ -53,13 +53,13 @@ class SSDS:
         return self.__repr__()
 
     def list_submission(self, submission_id: str) -> Generator[str, None, None]:
-        for key in self.blobstore.list(self.bucket, f"{self.prefix}/{submission_id}"):
+        for key in self.blobstore.list(f"{self.prefix}/{submission_id}"):
             ssds_key = key.replace(f"{self.prefix}/", "", 1)
             yield ssds_key
 
     def get_submission_name(self, submission_id: str) -> Optional[str]:
         name = None
-        for key in self.blobstore.list(self.bucket, f"{self.prefix}/{submission_id}"):
+        for key in self.blobstore.list(f"{self.prefix}/{submission_id}"):
             ssds_key = key.strip(f"{self.prefix}/")
             _, parts = ssds_key.split(self._name_delimeter, 1)
             name, _ = parts.split("/", 1)
@@ -91,10 +91,10 @@ class SSDS:
         """
         if src_url.startswith("s3://"):
             bucket_name, key = src_url[5:].split("/", 1)
-            size = S3BlobStore().size(bucket_name, key)
+            size = S3Blob(bucket_name, key).size()
         elif src_url.startswith("gs://"):
             bucket_name, key = src_url[5:].split("/", 1)
-            size = GSBlobStore().size(bucket_name, key)
+            size = GSBlob(bucket_name, key).size()
         else:
             size = os.path.getsize(src_url)
         ssds_key = self._compose_ssds_key(submission_id, name, submission_path)
@@ -154,18 +154,18 @@ class SSDS:
         dst_key = f"{self.prefix}/{ssds_key}"
         if url.startswith("s3://"):
             bucket_name, key = url[5:].split("/", 1)
-            data = S3BlobStore().get(bucket_name, key)
+            data = S3Blob(bucket_name, key).get()
         elif url.startswith("gs://"):
             bucket_name, key = url[5:].split("/", 1)
-            data = GSBlobStore().get(bucket_name, key)
+            data = GSBlob(bucket_name, key).get()
         else:
             with open(url, "rb") as fh:
                 data = fh.read()
         gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
         s3_etag = checksum.md5(data).hexdigest()
-        self.blobstore.put(self.bucket, dst_key, data)
+        self.blobstore.blob(dst_key).put(data)
         tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
-        self.blobstore.put_tags(self.bucket, dst_key, tags)
+        self.blobstore.blob(dst_key).put_tags(tags)
         return ssds_key
 
     def _upload_multipart(self,
@@ -175,16 +175,16 @@ class SSDS:
                           threads: Optional[int]) -> str:
         if url.startswith("s3://"):
             bucket_name, key = url[5:].split("/", 1)
-            parts = S3BlobStore().parts(bucket_name, key, threads)
+            parts = S3Blob(bucket_name, key).parts(threads)
         elif url.startswith("gs://"):
             bucket_name, key = url[5:].split("/", 1)
-            parts = GSBlobStore().parts(bucket_name, key, threads)  # type: ignore
+            parts = GSBlob(bucket_name, key).parts(threads)  # type: ignore
         else:
             parts = _file_part_iterator(url)  # type: ignore
         key = f"{self.prefix}/{ssds_key}"
         s3_etags = list()
         crc32c = checksum.crc32c(b"")
-        with self.blobstore.multipart_writer(self.bucket, key, threads) as uploader:
+        with self.blobstore.blob(key).multipart_writer(threads) as uploader:
             for part in parts:
                 s3_etags.append(checksum.md5(part.data).hexdigest())
                 crc32c.update(part.data)
@@ -194,7 +194,7 @@ class SSDS:
             s3_etag = checksum.compute_composite_etag(s3_etags)
             gs_crc32c = crc32c.google_storage_crc32c()
             tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
-            self.blobstore.put_tags(self.bucket, key, tags)
+            self.blobstore.blob(key).put_tags(tags)
 
         # TODO: parallelize tagging
         _tag()
@@ -222,22 +222,22 @@ def _list_tree(root) -> Generator[str, None, None]:
 
 def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]:
     def _verify_and_tag(key: str):
-        src_tags = src.blobstore.get_tags(src.bucket, key)
-        dst_checksum = dst.blobstore.cloud_native_checksum(dst.bucket, key)
+        src_tags = src.blobstore.blob(key).get_tags()
+        dst_checksum = dst.blobstore.blob(key).cloud_native_checksum()
         if "gs://" == dst.blobstore.schema:
             assert src_tags[SSDSObjectTag.SSDS_CRC32C] == dst_checksum
         elif "s3://" == dst.blobstore.schema:
             assert src_tags[SSDSObjectTag.SSDS_MD5] == dst_checksum
         else:
             raise RuntimeError("Unknown blobstore schema!")
-        dst.blobstore.put_tags(dst.bucket, key, src_tags)
+        dst.blobstore.blob(key).put_tags(src_tags)
 
     def _already_synced(key: str) -> bool:
-        if not dst.blobstore.exists(dst.bucket, key):
+        if not dst.blobstore.blob(key).exists():
             return False
         else:
-            src_tags = src.blobstore.get_tags(src.bucket, key)
-            dst_tags = dst.blobstore.get_tags(dst.bucket, key)
+            src_tags = src.blobstore.blob(key).get_tags()
+            dst_tags = dst.blobstore.blob(key).get_tags()
             if dst_tags != src_tags:
                 return False
             else:
@@ -246,7 +246,7 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
     def _sync_oneshot(key: str, data: bytes) -> Optional[str]:
         if not _already_synced(key):
             logger.info(f"syncing {key} from {src} to {dst}")
-            dst.blobstore.put(dst.bucket, key, data)
+            dst.blobstore.blob(key).put(data)
             _verify_and_tag(key)
             return key
         else:
@@ -257,14 +257,14 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
     threads = 3
     with ThreadPoolExecutor(max_workers=threads) as e:
         oneshot_uploads = AsyncSet(e, threads)
-        for key in src.blobstore.list(src.bucket, f"{src.prefix}/{submission_id}"):
-            parts = src.blobstore.parts(src.bucket, key, threads=threads)
+        for key in src.blobstore.list(f"{src.prefix}/{submission_id}"):
+            parts = src.blobstore.blob(key).parts(threads=threads)
             if 1 == len(parts):
                 oneshot_uploads.put(_sync_oneshot, key, list(parts)[0].data)
             else:
                 if not _already_synced(key):
                     logger.info(f"syncing {key} from {src} to {dst}")
-                    with dst.blobstore.multipart_writer(dst.bucket, key, threads=threads) as writer:
+                    with dst.blobstore.blob(key).multipart_writer(threads=threads) as writer:
                         for part in parts:
                             writer.put_part(part)
                     _verify_and_tag(key)
