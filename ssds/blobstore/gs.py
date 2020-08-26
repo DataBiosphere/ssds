@@ -14,20 +14,28 @@ from ssds.blobstore import BlobStore, Blob, AsyncPartIterator, Part, MultipartWr
 class GSBlobStore(BlobStore):
     schema = "gs://"
 
-    def __init__(self, bucket_name: str):
+    def __init__(self, bucket_name: str, billing_project: Optional[str]=None):
         self.bucket_name = bucket_name
+        self.billing_project = billing_project
 
     def list(self, prefix=""):
-        for blob in _client().bucket(self.bucket_name).list_blobs(prefix=prefix):
+        kwargs = dict()
+        if self.billing_project is not None:
+            kwargs['user_project'] = self.billing_project
+        for blob in _client().bucket(self.bucket_name, **kwargs).list_blobs(prefix=prefix):
             yield blob.name
 
     def blob(self, key: str) -> "GSBlob":
-        return GSBlob(self.bucket_name, key)
+        return GSBlob(self.bucket_name, key, self.billing_project)
 
 class GSBlob(Blob):
-    def __init__(self, bucket_name: str, key: str):
+    def __init__(self, bucket_name: str, key: str, billing_project: Optional[str]=None):
         self.bucket_name = bucket_name
-        self._gs_bucket = _client().bucket(self.bucket_name)
+        self.billing_project = billing_project
+        kwargs = dict()
+        if billing_project is not None:
+            kwargs['user_project'] = billing_project
+        self._gs_bucket = _client().bucket(self.bucket_name, **kwargs)
         self.key = key
 
     def put_tags(self, tags: Dict[str, str]):
@@ -69,8 +77,11 @@ class GSBlob(Blob):
         return GSMultipartWriter(self.bucket_name, self.key, threads)
 
 class GSAsyncPartIterator(AsyncPartIterator):
-    def __init__(self, bucket_name: str, key: str, threads: Optional[int]=None):
-        self._blob = _client().bucket(bucket_name).get_blob(key)
+    def __init__(self, bucket_name: str, key: str, threads: Optional[int]=None, billing_project: Optional[str]=None):
+        kwargs = dict()
+        if billing_project is not None:
+            kwargs['user_project'] = billing_project
+        self._blob = _client().bucket(bucket_name, **kwargs).get_blob(key)
         self.size = self._blob.size
         self.chunk_size = get_s3_multipart_chunk_size(self.size)
         self._number_of_parts = ceil(self.size / self.chunk_size) if 0 < self.size else 1
@@ -93,9 +104,12 @@ class _MonkeyPatchedPartUploader(gscio.Writer):
         super()._put_part(part_number, data)
 
 class GSMultipartWriter(MultipartWriter):
-    def __init__(self, bucket_name: str, key: str, threads: Optional[int]=None):
+    def __init__(self, bucket_name: str, key: str, threads: Optional[int]=None, billing_project: Optional[str]=None):
         super().__init__()
-        bucket = _client().bucket(bucket_name)
+        kwargs = dict()
+        if billing_project is not None:
+            kwargs['user_project'] = billing_project
+        bucket = _client().bucket(bucket_name, **kwargs)
         if threads is None:
             self._part_uploader: Union[gscio.AsyncPartUploader, _MonkeyPatchedPartUploader] = \
                 _MonkeyPatchedPartUploader(key, bucket, threads)
