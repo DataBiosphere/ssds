@@ -27,39 +27,40 @@ class GSBlobStore(BlobStore):
 class GSBlob(Blob):
     def __init__(self, bucket_name: str, key: str):
         self.bucket_name = bucket_name
+        self._gs_bucket = _client().bucket(self.bucket_name)
         self.key = key
 
     def put_tags(self, tags: Dict[str, str]):
-        blob = _client().bucket(self.bucket_name).get_blob(self.key)
+        blob = self._gs_bucket.get_blob(self.key)
         blob.metadata = tags
         blob.patch()
 
     def get_tags(self) -> Dict[str, str]:
-        blob = _client().bucket(self.bucket_name).get_blob(self.key)
+        blob = self._gs_bucket.get_blob(self.key)
         if blob.metadata is None:
             return dict()
         else:
             return blob.metadata.copy()
 
     def get(self) -> bytes:
-        blob = _client().bucket(self.bucket_name).get_blob(self.key)
+        blob = self._gs_bucket.get_blob(self.key)
         fileobj = io.BytesIO()
         blob.download_to_file(fileobj)
         return fileobj.getvalue()
 
     def put(self, data: bytes):
-        blob = _client().bucket(self.bucket_name).blob(self.key)
+        blob = self._gs_bucket.blob(self.key)
         blob.upload_from_file(io.BytesIO(data))
 
     def exists(self) -> bool:
-        blob = _client().bucket(self.bucket_name).blob(self.key)
+        blob = self._gs_bucket.blob(self.key)
         return blob.exists()
 
     def size(self) -> int:
-        return _client().bucket(self.bucket_name).get_blob(self.key).size
+        return self._gs_bucket.get_blob(self.key).size
 
     def cloud_native_checksum(self) -> str:
-        return _client().bucket(self.bucket_name).get_blob(self.key).crc32c
+        return self._gs_bucket.get_blob(self.key).crc32c
 
     def parts(self, threads: Optional[int]=None) -> "GSAsyncPartIterator":
         return GSAsyncPartIterator(self.bucket_name, self.key, threads)

@@ -29,6 +29,7 @@ class S3BlobStore(BlobStore):
 class S3Blob(Blob):
     def __init__(self, bucket_name: str, key: str):
         self.bucket_name = bucket_name
+        self._s3_bucket = aws.resource("s3").Bucket(self.bucket_name)
         self.key = key
 
     def put_tags(self, tags: Dict[str, str]):
@@ -42,11 +43,11 @@ class S3Blob(Blob):
                 for tag in tagset['TagSet']}
 
     def get(self) -> bytes:
-        with closing(aws.resource("s3").Bucket(self.bucket_name).Object(self.key).get()['Body']) as fh:
+        with closing(self._s3_bucket.Object(self.key).get()['Body']) as fh:
             return fh.read()
 
     def put(self, data: bytes):
-        blob = aws.resource("s3").Bucket(self.bucket_name).Object(self.key)
+        blob = self._s3_bucket.Object(self.key)
         blob.upload_fileobj(io.BytesIO(data))
 
     def exists(self) -> bool:
@@ -60,11 +61,11 @@ class S3Blob(Blob):
                 raise
 
     def size(self) -> int:
-        blob = aws.resource("s3").Bucket(self.bucket_name).Object(self.key)
+        blob = self._s3_bucket.Object(self.key)
         return blob.content_length
 
     def cloud_native_checksum(self) -> str:
-        blob = aws.resource("s3").Bucket(self.bucket_name).Object(self.key)
+        blob = self._s3_bucket.Object(self.key)
         return blob.e_tag.strip("\"")
 
     def parts(self, threads: Optional[int]=None) -> "S3AsyncPartIterator":
