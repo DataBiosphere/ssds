@@ -9,6 +9,7 @@ import tempfile
 from math import ceil
 from uuid import uuid4
 from random import randint
+from typing import Iterable, Dict, Optional
 
 from google.cloud import storage
 
@@ -92,8 +93,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_copy_local_to_cloud(self):
         submission_id = f"{uuid4()}"
         submission_name = "this_is_a_test_submission"
-        expected_oneshot_data = os.urandom(7)
-        expected_multipart_data = os.urandom(1024 * 1024 * 160)
+        expected_oneshot_data, expected_multipart_data = TestData.oneshot(), TestData.multipart()
         tests = [
             ("local to aws", S3_SSDS, f"{uuid4()}", expected_oneshot_data, None),
             ("local to aws", S3_SSDS, f"{uuid4()}", expected_multipart_data, None),
@@ -121,11 +121,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_copy_cloud_to_cloud(self):
         submission_id = f"{uuid4()}"
         submission_name = "this_is_a_test_submission"
-        oneshot = dict(key=f"{uuid4()}", data=os.urandom(7))
-        multipart = dict(key=f"{uuid4()}", data=os.urandom(1024 * 1024 * 160))
-        for src_ds in [S3_SSDS, GS_SSDS]:
-            for data_config in [oneshot, multipart]:
-                src_ds.blobstore.put(src_ds.bucket, data_config['key'], data_config['data'])
+        oneshot, multipart = TestData.uploaded()
         tests = [
             ("gcp to gcp", GS_SSDS, GS_SSDS, oneshot['key'], oneshot['data'], None),
             ("gcp to gcp", GS_SSDS, GS_SSDS, multipart['key'], multipart['data'], 4),
@@ -184,7 +180,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
         os.mkdir(root)
         if single_file:
             with open(os.path.join(root, "file.dat"), "wb") as fh:
-                fh.write(os.urandom(200))
+                fh.write(TestData.oneshot())
         else:
             subdir1 = os.path.join(root, "subdir1")
             subdir2 = os.path.join(root, "subdir2")
@@ -196,15 +192,15 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                 with open(os.path.join(root, f"zero_byte_file{i}.dat"), "wb") as fh:
                     fh.write(b"")
                 with open(os.path.join(root, f"file{i}.dat"), "wb") as fh:
-                    fh.write(os.urandom(200))
+                    fh.write(TestData.oneshot())
                 with open(os.path.join(subdir1, f"file{i}.dat"), "wb") as fh:
-                    fh.write(os.urandom(200))
+                    fh.write(TestData.oneshot())
                 with open(os.path.join(subdir2, f"file{i}.dat"), "wb") as fh:
-                    fh.write(os.urandom(200))
+                    fh.write(TestData.oneshot())
                 with open(os.path.join(subsubdir, f"file{i}.dat"), "wb") as fh:
-                    fh.write(os.urandom(200))
+                    fh.write(TestData.oneshot())
             with open(os.path.join(root, "large.dat"), "wb") as fh:
-                fh.write(os.urandom(1024 ** 2 * 160))
+                fh.write(TestData.multipart())
         return root
 
 class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
@@ -221,7 +217,7 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
             self.assertEqual(expected_crc32c, cs.hexdigest())
 
     def test_blob_crc32c(self):
-        data = os.urandom(200)
+        data = TestData.oneshot()
         blob = storage.Client().bucket(GS_SSDS.bucket).blob("test")
         with io.BytesIO(data) as fh:
             blob.upload_from_file(fh)
@@ -230,7 +226,7 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
         self.assertEqual(blob.crc32c, cs)
 
     def test_blob_md5(self):
-        data = os.urandom(200)
+        data = TestData.oneshot()
         blob = ssds.aws.resource("s3").Bucket(S3_SSDS.bucket).Object("test")
         with io.BytesIO(data) as fh:
             blob.upload_fileobj(fh)
@@ -262,13 +258,13 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_get(self):
         with self.subTest("aws"):
             key = f"{uuid4()}"
-            expected_data = os.urandom(10)
+            expected_data = TestData.oneshot()
             self._put_s3_obj(S3_SSDS.bucket, key, expected_data)
             data = S3BlobStore().get(S3_SSDS.bucket, key)
             self.assertEqual(data, expected_data)
         with self.subTest("gcp"):
             key = f"{uuid4()}"
-            expected_data = os.urandom(10)
+            expected_data = TestData.oneshot()
             self._put_gs_obj(S3_SSDS.bucket, key, expected_data)
             data = GSBlobStore().get(GS_SSDS.bucket, key)
             self.assertEqual(data, expected_data)
@@ -300,19 +296,17 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
             self.assertEqual(expected_checksum, GSBlobStore().cloud_native_checksum(GS_SSDS.bucket, key))
 
     def test_part_iterators(self):
-        key = f"{uuid4()}"
-        expected_data = os.urandom(1024 * 1024 * 130)
-        chunk_size = get_s3_multipart_chunk_size(len(expected_data))
-        number_of_parts = ceil(len(expected_data) / chunk_size)
-        expected_parts = [expected_data[i * chunk_size:(i + 1) * chunk_size]
+        _, multipart = TestData.uploaded()
+        chunk_size = get_s3_multipart_chunk_size(len(multipart['data']))
+        number_of_parts = ceil(len(multipart['data']) / chunk_size)
+        expected_parts = [multipart['data'][i * chunk_size:(i + 1) * chunk_size]
                           for i in range(number_of_parts)]
-        tests = [("aws", S3_SSDS.bucket, self._put_s3_obj, S3AsyncPartIterator),
-                 ("gcp", GS_SSDS.bucket, self._put_gs_obj, GSAsyncPartIterator)]
-        for replica_name, bucket_name, upload, part_iterator in tests:
+        tests = [("aws", S3_SSDS.bucket, S3AsyncPartIterator),
+                 ("gcp", GS_SSDS.bucket, GSAsyncPartIterator)]
+        for replica_name, bucket_name, part_iterator in tests:
             with self.subTest(replica_name):
-                upload(bucket_name, key, expected_data)
                 count = 0
-                for part_number, data in part_iterator(bucket_name, key, threads=1):
+                for part_number, data in part_iterator(bucket_name, multipart['key'], threads=1):
                     self.assertEqual(expected_parts[part_number], data)
                     count += 1
                 self.assertEqual(number_of_parts, count)
@@ -350,8 +344,8 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_s3_multipart_writer(self):
         from ssds.blobstore.s3 import S3MultipartWriter, Part
-        expected_data = os.urandom(1024**2 * 130)
-        for threads in [None, 1, 2, 3]:
+        expected_data = TestData.multipart()
+        for threads in [None, 2]:
             with self.subTest(threads=threads):
                 chunk_size = get_s3_multipart_chunk_size(len(expected_data))
                 number_of_chunks = ceil(len(expected_data) / chunk_size)
@@ -365,6 +359,34 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                 print(f"upload duration threads={threads}", time.time() - start_time)
                 retrieved_data = ssds.aws.resource("s3").Bucket(S3_SSDS.bucket).Object(key).get()['Body'].read()
                 self.assertEqual(expected_data, retrieved_data)
+
+class TestData:
+    _oneshot: Optional[bytes] = None
+    _multipart: Optional[bytes] = None
+    _uploaded: Dict[ssds.SSDS, bool] = dict()
+    _oneshot_key = f"{uuid4()}"
+    _multipart_key = f"{uuid4()}"
+
+    @classmethod
+    def oneshot(cls):
+        cls._oneshot = cls._oneshot or os.urandom(7)
+        return cls._oneshot
+
+    @classmethod
+    def multipart(cls):
+        cls._multipart = cls._multipart or os.urandom(1024 * 1024 * 160)
+        return cls._multipart
+
+    @classmethod
+    def uploaded(cls, dests: Iterable[ssds.SSDS]=[S3_SSDS, GS_SSDS]):
+        oneshot = dict(key=cls._oneshot_key, data=cls.oneshot())
+        multipart = dict(key=cls._multipart_key, data=cls.multipart())
+        for dst_ds in dests:
+            if not cls._uploaded.get(dst_ds):
+                for data_config in [oneshot, multipart]:
+                    dst_ds.blobstore.put(dst_ds.bucket, data_config['key'], data_config['data'])
+                cls._uploaded[dst_ds] = True
+        return oneshot, multipart
 
 if __name__ == '__main__':
     unittest.main()
