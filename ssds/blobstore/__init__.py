@@ -15,36 +15,40 @@ AWS_MAX_MULTIPART_COUNT = 10000
 """Maximum number of parts allowed in a multipart upload.  This is a limitation imposed by S3."""
 
 class BlobStore:
-    schema: Optional[str] = None
-
-    def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
+    def list(self, prefix: str=""):
         raise NotImplementedError()
 
-    def get_tags(self, bucket_name: str, key: str) -> Dict[str, str]:
+    def blob(self, key: str) -> "Blob":
         raise NotImplementedError()
 
-    def list(self, bucket_name: str, prefix=""):
+class Blob:
+    schema = ""
+
+    def put_tags(self, tags: Dict[str, str]):
         raise NotImplementedError()
 
-    def get(self, bucket_name: str, key: str) -> bytes:
+    def get_tags(self) -> Dict[str, str]:
         raise NotImplementedError()
 
-    def put(self, bucket_name: str, key: str, data: bytes):
+    def get(self) -> bytes:
         raise NotImplementedError()
 
-    def exists(self, bucket_name: str, key: str) -> bool:
+    def put(self, data: bytes):
         raise NotImplementedError()
 
-    def size(self, bucket_name: str, key: str) -> int:
+    def exists(self) -> bool:
         raise NotImplementedError()
 
-    def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
+    def size(self) -> int:
         raise NotImplementedError()
 
-    def parts(self, bucket_name: str, key: str, threads: Optional[int]=None) -> "AsyncPartIterator":
+    def cloud_native_checksum(self) -> str:
         raise NotImplementedError()
 
-    def multipart_writer(self, bucket_name: str, key: str, threads: Optional[int]=None) -> "MultipartWriter":
+    def parts(self, threads: Optional[int]=None) -> "AsyncPartIterator":
+        raise NotImplementedError()
+
+    def multipart_writer(self, threads: Optional[int]=None) -> "MultipartWriter":
         raise NotImplementedError()
 
 Part = namedtuple("Part", "number data")

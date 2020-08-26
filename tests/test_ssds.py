@@ -52,7 +52,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                                                                  submission_name,
                                                                  os.path.relpath(filepath, root))
                         key = f"{ds.prefix}/{expected_ssds_key}"
-                        self.assertEqual(os.path.getsize(filepath), ds.blobstore.size(ds.bucket, key))
+                        self.assertEqual(os.path.getsize(filepath), ds.blobstore.blob(key).size())
 
     def test_upload_name_length_error(self):
         with tempfile.TemporaryDirectory() as dirname:
@@ -116,7 +116,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                                                              submission_name,
                                                              submission_path)
                     key = f"{ds.prefix}/{expected_ssds_key}"
-                    self.assertEqual(os.path.getsize(tf.name), ds.blobstore.size(ds.bucket, key))
+                    self.assertEqual(os.path.getsize(tf.name), ds.blobstore.blob(key).size())
 
     def test_copy_cloud_to_cloud(self):
         submission_id = f"{uuid4()}"
@@ -145,8 +145,8 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                       time.time() - start_time)
                 expected_ssds_key = dst_ds._compose_ssds_key(submission_id, submission_name, submission_path)
                 dst_key = f"{dst_ds.prefix}/{expected_ssds_key}"
-                self.assertEqual(src_ds.blobstore.size(src_ds.bucket, src_key),
-                                 dst_ds.blobstore.size(dst_ds.bucket, dst_key))
+                self.assertEqual(src_ds.blobstore.blob(src_key).size(),
+                                 dst_ds.blobstore.blob(dst_key).size())
 
     def test_sync(self):
         tests = [
@@ -168,8 +168,8 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                 self.assertEqual(sorted(uploaded_keys), sorted(synced_keys))
                 self.assertEqual(sorted(uploaded_keys), sorted(dst_listed_keys))
                 for ssds_key in dst_listed_keys:
-                    a = src.blobstore.get(S3_SSDS.bucket, f"{S3_SSDS.prefix}/{ssds_key}")
-                    b = dst.blobstore.get(GS_SSDS.bucket, f"{GS_SSDS.prefix}/{ssds_key}")
+                    a = src.blobstore.blob(f"{S3_SSDS.prefix}/{ssds_key}").get()
+                    b = dst.blobstore.blob(f"{GS_SSDS.prefix}/{ssds_key}").get()
                     self.assertEqual(a, b)
                 with self.subTest("test no resync"):
                     synced_keys = [key for key in ssds.sync(submission_id, src, dst) if key]
@@ -260,13 +260,13 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
             key = f"{uuid4()}"
             expected_data = TestData.oneshot()
             self._put_s3_obj(S3_SSDS.bucket, key, expected_data)
-            data = S3BlobStore().get(S3_SSDS.bucket, key)
+            data = S3BlobStore(S3_SSDS.bucket).blob(key).get()
             self.assertEqual(data, expected_data)
         with self.subTest("gcp"):
             key = f"{uuid4()}"
             expected_data = TestData.oneshot()
             self._put_gs_obj(S3_SSDS.bucket, key, expected_data)
-            data = GSBlobStore().get(GS_SSDS.bucket, key)
+            data = GSBlobStore(GS_SSDS.bucket).blob(key).get()
             self.assertEqual(data, expected_data)
 
     def _test_put(self):
@@ -281,19 +281,19 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         for test_name, bucket, bs, upload in tests:
             expected_size = randint(1, 10)
             upload(bucket, key, os.urandom(expected_size))
-            self.assertEqual(expected_size, bs.size(bucket, key))
+            self.assertEqual(expected_size, bs.blob(key).size())
 
     def test_cloud_native_checksums(self):
         key = f"{uuid4()}"
         with self.subTest("aws"):
             blob = self._put_s3_obj(S3_SSDS.bucket, key, os.urandom(1))
             expected_checksum = blob.e_tag.strip("\"")
-            self.assertEqual(expected_checksum, S3BlobStore().cloud_native_checksum(S3_SSDS.bucket, key))
+            self.assertEqual(expected_checksum, S3BlobStore(S3_SSDS.bucket).blob(key).cloud_native_checksum())
         with self.subTest("gcp"):
             blob = self._put_gs_obj(GS_SSDS.bucket, key, os.urandom(1))
             blob.reload()
             expected_checksum = blob.crc32c
-            self.assertEqual(expected_checksum, GSBlobStore().cloud_native_checksum(GS_SSDS.bucket, key))
+            self.assertEqual(expected_checksum, GSBlobStore(GS_SSDS.bucket).blob(key).cloud_native_checksum())
 
     def test_part_iterators(self):
         _, multipart = TestData.uploaded()
@@ -318,8 +318,8 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         for replica_name, blobstore, bucket_name, upload in tests:
             upload(bucket_name, key, b"")
             tags = dict(foo="bar", doom="gloom")
-            blobstore.put_tags(bucket_name, key, tags)
-            self.assertEqual(tags, blobstore.get_tags(bucket_name, key))
+            blobstore.blob(key).put_tags(tags)
+            self.assertEqual(tags, blobstore.blob(key).get_tags())
 
     def test_exists(self):
         key = f"{uuid4()}"
@@ -327,9 +327,9 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                  ("gcp", GS_SSDS.blobstore, GS_SSDS.bucket, self._put_gs_obj)]
         for replica_name, blobstore, bucket_name, upload in tests:
             with self.subTest(replica=replica_name):
-                self.assertFalse(blobstore.exists(bucket_name, key))
+                self.assertFalse(blobstore.blob(key).exists())
                 upload(bucket_name, key, b"")
-                self.assertTrue(blobstore.exists(bucket_name, key))
+                self.assertTrue(blobstore.blob(key).exists())
 
     def _put_s3_obj(self, bucket, key, data):
         blob = ssds.aws.resource("s3").Bucket(bucket).Object(key)
@@ -384,7 +384,7 @@ class TestData:
         for dst_ds in dests:
             if not cls._uploaded.get(dst_ds):
                 for data_config in [oneshot, multipart]:
-                    dst_ds.blobstore.put(dst_ds.bucket, data_config['key'], data_config['data'])
+                    dst_ds.blobstore.blob(data_config['key']).put(data_config['data'])
                 cls._uploaded[dst_ds] = True
         return oneshot, multipart
 

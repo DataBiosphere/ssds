@@ -8,53 +8,64 @@ from typing import Dict, Optional, Union, Generator
 import gs_chunked_io as gscio
 from google.cloud.storage import Client
 
-from ssds.blobstore import BlobStore, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size
+from ssds.blobstore import BlobStore, Blob, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size
 
 
 class GSBlobStore(BlobStore):
     schema = "gs://"
 
-    def put_tags(self, bucket_name: str, key: str, tags: Dict[str, str]):
-        blob = _client().bucket(bucket_name).get_blob(key)
+    def __init__(self, bucket_name: str):
+        self.bucket_name = bucket_name
+
+    def list(self, prefix=""):
+        for blob in _client().bucket(self.bucket_name).list_blobs(prefix=prefix):
+            yield blob.name
+
+    def blob(self, key: str) -> "GSBlob":
+        return GSBlob(self.bucket_name, key)
+
+class GSBlob(Blob):
+    def __init__(self, bucket_name: str, key: str):
+        self.bucket_name = bucket_name
+        self.key = key
+
+    def put_tags(self, tags: Dict[str, str]):
+        blob = _client().bucket(self.bucket_name).get_blob(self.key)
         blob.metadata = tags
         blob.patch()
 
-    def get_tags(self, bucket_name: str, key: str) -> Dict[str, str]:
-        blob = _client().bucket(bucket_name).get_blob(key)
+    def get_tags(self) -> Dict[str, str]:
+        blob = _client().bucket(self.bucket_name).get_blob(self.key)
         if blob.metadata is None:
             return dict()
         else:
             return blob.metadata.copy()
 
-    def list(self, bucket_name: str, prefix="") -> Generator[str, None, None]:
-        for blob in _client().bucket(bucket_name).list_blobs(prefix=prefix):
-            yield blob.name
-
-    def get(self, bucket_name: str, key: str) -> bytes:
-        blob = _client().bucket(bucket_name).get_blob(key)
+    def get(self) -> bytes:
+        blob = _client().bucket(self.bucket_name).get_blob(self.key)
         fileobj = io.BytesIO()
         blob.download_to_file(fileobj)
         return fileobj.getvalue()
 
-    def put(self, bucket_name: str, key: str, data: bytes):
-        blob = _client().bucket(bucket_name).blob(key)
+    def put(self, data: bytes):
+        blob = _client().bucket(self.bucket_name).blob(self.key)
         blob.upload_from_file(io.BytesIO(data))
 
-    def exists(self, bucket_name: str, key: str) -> bool:
-        blob = _client().bucket(bucket_name).blob(key)
+    def exists(self) -> bool:
+        blob = _client().bucket(self.bucket_name).blob(self.key)
         return blob.exists()
 
-    def size(self, bucket_name: str, key: str) -> int:
-        return _client().bucket(bucket_name).get_blob(key).size
+    def size(self) -> int:
+        return _client().bucket(self.bucket_name).get_blob(self.key).size
 
-    def cloud_native_checksum(self, bucket_name: str, key: str) -> str:
-        return _client().bucket(bucket_name).get_blob(key).crc32c
+    def cloud_native_checksum(self) -> str:
+        return _client().bucket(self.bucket_name).get_blob(self.key).crc32c
 
-    def parts(self, bucket_name: str, key: str, threads: Optional[int]=None) -> "GSAsyncPartIterator":
-        return GSAsyncPartIterator(bucket_name, key, threads)
+    def parts(self, threads: Optional[int]=None) -> "GSAsyncPartIterator":
+        return GSAsyncPartIterator(self.bucket_name, self.key, threads)
 
-    def multipart_writer(self, bucket_name: str, key: str, threads: Optional[int]=None) -> "MultipartWriter":
-        return GSMultipartWriter(bucket_name, key, threads)
+    def multipart_writer(self, threads: Optional[int]=None) -> "MultipartWriter":
+        return GSMultipartWriter(self.bucket_name, self.key, threads)
 
 class GSAsyncPartIterator(AsyncPartIterator):
     def __init__(self, bucket_name: str, key: str, threads: Optional[int]=None):
