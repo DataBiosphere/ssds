@@ -71,7 +71,7 @@ class GSBlob(Blob):
         return self._gs_bucket.get_blob(self.key).crc32c
 
     def parts(self, threads: Optional[int]=None) -> "GSAsyncPartIterator":
-        return GSAsyncPartIterator(self.bucket_name, self.key, threads)
+        return GSAsyncPartIterator(self.bucket_name, self.key, threads, self.billing_project)
 
     def multipart_writer(self, threads: Optional[int]=None) -> "MultipartWriter":
         return GSMultipartWriter(self.bucket_name, self.key, threads)
