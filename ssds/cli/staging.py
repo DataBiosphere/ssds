@@ -30,6 +30,19 @@ def upload(args: argparse.Namespace):
     for ssds_key in ssds.upload(root, args.submission_id, args.name, threads=3):
         print(ssds.compose_blobstore_url(ssds_key))
 
+@staging_cli.command("copy", arguments={
+    "--submission-id": dict(type=str, required=True, help="Submission id provided for your submission"),
+    "--name": dict(type=str, default=None, help="Human readable name of submission. Cannot contain spaces"),
+    "--submission-path": dict(type=str, required=True, help="Path in submission directory, e.g. `my/path/to/foo.bam`"),
+    "src_url": dict(type=str, help="local path, gs://, or s3://")
+})
+def copy(args: argparse.Namespace):
+    """
+    Copy files from the local filesystem or cloud locations into the SSDS
+    """
+    ssds = Staging[args.deployment].ssds
+    ssds.copy(args.src_url, args.submission_id, args.name, args.submission_path, threads=3)
+
 @staging_cli.command("list")
 def list(args: argparse.Namespace):
     """
