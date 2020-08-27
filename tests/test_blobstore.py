@@ -27,6 +27,8 @@ s3_blobstore = S3BlobStore(s3_test_bucket)
 gs_test_bucket = _GSStagingTest.bucket
 gs_blobstore = GSBlobStore(gs_test_bucket)
 
+test_data = TestData()
+
 class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_schema(self):
         self.assertEqual("s3://", S3BlobStore.schema)
@@ -35,13 +37,13 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_get(self):
         with self.subTest("aws"):
             key = f"{uuid4()}"
-            expected_data = TestData.oneshot()
+            expected_data = test_data.oneshot
             self._put_s3_obj(s3_test_bucket, key, expected_data)
             data = S3BlobStore(s3_test_bucket).blob(key).get()
             self.assertEqual(data, expected_data)
         with self.subTest("gcp"):
             key = f"{uuid4()}"
-            expected_data = TestData.oneshot()
+            expected_data = test_data.oneshot
             self._put_gs_obj(s3_test_bucket, key, expected_data)
             data = GSBlobStore(gs_test_bucket).blob(key).get()
             self.assertEqual(data, expected_data)
@@ -73,7 +75,7 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
             self.assertEqual(expected_checksum, GSBlobStore(gs_test_bucket).blob(key).cloud_native_checksum())
 
     def test_part_iterators(self):
-        _, multipart = TestData.uploaded([s3_blobstore, gs_blobstore])
+        _, multipart = test_data.uploaded([s3_blobstore, gs_blobstore])
         chunk_size = get_s3_multipart_chunk_size(len(multipart['data']))
         number_of_parts = ceil(len(multipart['data']) / chunk_size)
         expected_parts = [multipart['data'][i * chunk_size:(i + 1) * chunk_size]
@@ -119,7 +121,7 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         return blob
 
     def test_s3_multipart_writer(self):
-        expected_data = TestData.multipart()
+        expected_data = test_data.multipart
         for threads in [None, 2]:
             with self.subTest(threads=threads):
                 chunk_size = get_s3_multipart_chunk_size(len(expected_data))
