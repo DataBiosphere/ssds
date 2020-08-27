@@ -12,6 +12,7 @@ pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noq
 sys.path.insert(0, pkg_root)  # noqa
 
 import ssds
+import ssds.blobstore
 from ssds.deployment import _S3StagingTest, _GSStagingTest
 from tests import infra, TestData
 
@@ -21,9 +22,20 @@ ssds.logger.addHandler(logging.StreamHandler(sys.stdout))
 
 S3_SSDS = _S3StagingTest()
 GS_SSDS = _GSStagingTest()
-test_data = TestData()
 
 class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
+    test_data = TestData(1, 1)  # appease mypy
+
+    @classmethod
+    def setUpClass(cls):
+        cls._old_aws_min_chunk_size = ssds.blobstore.AWS_MIN_CHUNK_SIZE
+        ssds.blobstore.AWS_MIN_CHUNK_SIZE = 1024 * 1024 * 5
+        cls.test_data = TestData(7, ssds.blobstore.AWS_MIN_CHUNK_SIZE + 1)
+
+    @classmethod
+    def tearDownClass(cls):
+        ssds.blobstore.AWS_MIN_CHUNK_SIZE = cls._old_aws_min_chunk_size
+
     def test_upload(self):
         with tempfile.TemporaryDirectory() as dirname:
             root = self._prepare_local_submission_dir(dirname)
@@ -86,7 +98,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_copy_local_to_cloud(self):
         submission_id = f"{uuid4()}"
         submission_name = "this_is_a_test_submission"
-        expected_oneshot_data, expected_multipart_data = test_data.oneshot, test_data.multipart
+        expected_oneshot_data, expected_multipart_data = self.test_data.oneshot, self.test_data.multipart
         tests = [
             ("local to aws", S3_SSDS, f"{uuid4()}", expected_oneshot_data, None),
             ("local to aws", S3_SSDS, f"{uuid4()}", expected_multipart_data, None),
@@ -114,7 +126,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_copy_cloud_to_cloud(self):
         submission_id = f"{uuid4()}"
         submission_name = "this_is_a_test_submission"
-        oneshot, multipart = test_data.uploaded([S3_SSDS.blobstore, GS_SSDS.blobstore])
+        oneshot, multipart = self.test_data.uploaded([S3_SSDS.blobstore, GS_SSDS.blobstore])
         tests = [
             ("gcp to gcp", GS_SSDS, GS_SSDS, oneshot['key'], oneshot['data'], None),
             ("gcp to gcp", GS_SSDS, GS_SSDS, multipart['key'], multipart['data'], 4),
@@ -173,7 +185,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
         os.mkdir(root)
         if single_file:
             with open(os.path.join(root, "file.dat"), "wb") as fh:
-                fh.write(test_data.oneshot)
+                fh.write(self.test_data.oneshot)
         else:
             subdir1 = os.path.join(root, "subdir1")
             subdir2 = os.path.join(root, "subdir2")
@@ -185,15 +197,15 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                 with open(os.path.join(root, f"zero_byte_file{i}.dat"), "wb") as fh:
                     fh.write(b"")
                 with open(os.path.join(root, f"file{i}.dat"), "wb") as fh:
-                    fh.write(test_data.oneshot)
+                    fh.write(self.test_data.oneshot)
                 with open(os.path.join(subdir1, f"file{i}.dat"), "wb") as fh:
-                    fh.write(test_data.oneshot)
+                    fh.write(self.test_data.oneshot)
                 with open(os.path.join(subdir2, f"file{i}.dat"), "wb") as fh:
-                    fh.write(test_data.oneshot)
+                    fh.write(self.test_data.oneshot)
                 with open(os.path.join(subsubdir, f"file{i}.dat"), "wb") as fh:
-                    fh.write(test_data.oneshot)
+                    fh.write(self.test_data.oneshot)
             with open(os.path.join(root, "large.dat"), "wb") as fh:
-                fh.write(test_data.multipart)
+                fh.write(self.test_data.multipart)
         return root
 
 if __name__ == '__main__':
