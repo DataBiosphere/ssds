@@ -18,6 +18,8 @@ from tests import infra, TestData
 s3_test_bucket = _S3StagingTest.bucket
 gs_test_bucket = _GSStagingTest.bucket
 
+test_data = TestData()
+
 class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_crc32c(self):
         data = b"\x89\xc0\xc6\xcd\xa9$=\xfa\x91\x86\xedi\xec\x18\xcc\xad\xd1\xe1\x82\x8f^\xd2\xdd$\x1fE\x821"
@@ -32,7 +34,7 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
             self.assertEqual(expected_crc32c, cs.hexdigest())
 
     def test_blob_crc32c(self):
-        data = TestData.oneshot()
+        data = test_data.oneshot
         blob = storage.Client().bucket(gs_test_bucket).blob("test")
         with io.BytesIO(data) as fh:
             blob.upload_from_file(fh)
@@ -41,7 +43,7 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
         self.assertEqual(blob.crc32c, cs)
 
     def test_blob_md5(self):
-        data = TestData.oneshot()
+        data = test_data.oneshot
         blob = ssds.aws.resource("s3").Bucket(s3_test_bucket).Object("test")
         with io.BytesIO(data) as fh:
             blob.upload_fileobj(fh)
