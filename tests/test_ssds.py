@@ -21,7 +21,7 @@ from ssds.deployment import _S3StagingTest, _GSStagingTest
 from ssds.blobstore import AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB
 from ssds.blobstore.s3 import S3BlobStore, S3AsyncPartIterator, get_s3_multipart_chunk_size
 from ssds.blobstore.gs import GSBlobStore, GSAsyncPartIterator
-from tests import infra
+from tests import infra, TestData
 
 
 ssds.logger.level = logging.INFO
@@ -121,7 +121,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_copy_cloud_to_cloud(self):
         submission_id = f"{uuid4()}"
         submission_name = "this_is_a_test_submission"
-        oneshot, multipart = TestData.uploaded()
+        oneshot, multipart = TestData.uploaded([S3_SSDS.blobstore, GS_SSDS.blobstore])
         tests = [
             ("gcp to gcp", GS_SSDS, GS_SSDS, oneshot['key'], oneshot['data'], None),
             ("gcp to gcp", GS_SSDS, GS_SSDS, multipart['key'], multipart['data'], 4),
@@ -296,7 +296,7 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
             self.assertEqual(expected_checksum, GSBlobStore(GS_SSDS.bucket).blob(key).cloud_native_checksum())
 
     def test_part_iterators(self):
-        _, multipart = TestData.uploaded()
+        _, multipart = TestData.uploaded([S3_SSDS.blobstore, GS_SSDS.blobstore])
         chunk_size = get_s3_multipart_chunk_size(len(multipart['data']))
         number_of_parts = ceil(len(multipart['data']) / chunk_size)
         expected_parts = [multipart['data'][i * chunk_size:(i + 1) * chunk_size]
@@ -359,34 +359,6 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                 print(f"upload duration threads={threads}", time.time() - start_time)
                 retrieved_data = ssds.aws.resource("s3").Bucket(S3_SSDS.bucket).Object(key).get()['Body'].read()
                 self.assertEqual(expected_data, retrieved_data)
-
-class TestData:
-    _oneshot: Optional[bytes] = None
-    _multipart: Optional[bytes] = None
-    _uploaded: Dict[ssds.SSDS, bool] = dict()
-    _oneshot_key = f"{uuid4()}"
-    _multipart_key = f"{uuid4()}"
-
-    @classmethod
-    def oneshot(cls):
-        cls._oneshot = cls._oneshot or os.urandom(7)
-        return cls._oneshot
-
-    @classmethod
-    def multipart(cls):
-        cls._multipart = cls._multipart or os.urandom(1024 * 1024 * 160)
-        return cls._multipart
-
-    @classmethod
-    def uploaded(cls, dests: Iterable[ssds.SSDS]=[S3_SSDS, GS_SSDS]):
-        oneshot = dict(key=cls._oneshot_key, data=cls.oneshot())
-        multipart = dict(key=cls._multipart_key, data=cls.multipart())
-        for dst_ds in dests:
-            if not cls._uploaded.get(dst_ds):
-                for data_config in [oneshot, multipart]:
-                    dst_ds.blobstore.blob(data_config['key']).put(data_config['data'])
-                cls._uploaded[dst_ds] = True
-        return oneshot, multipart
 
 if __name__ == '__main__':
     unittest.main()
