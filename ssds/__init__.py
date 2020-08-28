@@ -3,13 +3,13 @@ import sys
 import logging
 import contextlib
 from concurrent.futures import ThreadPoolExecutor
-from typing import Tuple, Union, Optional, Generator, Type
+from typing import Tuple, Dict, Union, Optional, Generator, Type
 
 from gs_chunked_io.async_collections import AsyncSet
 
 from ssds import checksum
 from ssds.blobstore import Blob, BlobStore, get_s3_multipart_chunk_size, Part
-from ssds.blobstore.s3 import S3Blob
+from ssds.blobstore.s3 import S3Blob, S3BlobStore
 from ssds.blobstore.gs import GSBlob, GSBlobStore
 
 
@@ -179,27 +179,39 @@ class SSDS:
                           ssds_key: str,
                           part_size: int,
                           threads: Optional[int]) -> str:
+        checksums: Dict[str, Union[str, checksum.UnorderedChecksum]]
         if url.startswith("s3://"):
             bucket_name, key = url[5:].split("/", 1)
-            parts = S3Blob(bucket_name, key).parts(threads)
+            s3_blob = S3Blob(bucket_name, key)
+            parts = s3_blob.parts(threads)
+            # s3 -> s3 must recompute the s3etag because the part layout may change
+            checksums = dict(s3=checksum.S3EtagUnordered(), gs=checksum.GScrc32cUnordered())
         elif url.startswith("gs://"):
             bucket_name, key = url[5:].split("/", 1)
-            parts = GSBlob(bucket_name, key).parts(threads)  # type: ignore
+            gs_blob = GSBlob(bucket_name, key)
+            parts = gs_blob.parts(threads)  # type: ignore
+            checksums = dict(s3=checksum.S3EtagUnordered(), gs=gs_blob.cloud_native_checksum())
         else:
             parts = _file_part_iterator(url)  # type: ignore
+            checksums = dict(s3=checksum.S3EtagUnordered(), gs=checksum.GScrc32cUnordered())
         key = f"{self.prefix}/{ssds_key}"
-        s3_etags = list()
-        crc32c = checksum.crc32c(b"")
         with self.blobstore.blob(key).multipart_writer(threads) as uploader:
             for part in parts:
-                s3_etags.append(checksum.md5(part.data).hexdigest())
-                crc32c.update(part.data)
+                for cs in checksums.values():
+                    if isinstance(cs, checksum.UnorderedChecksum):
+                        cs.update(part.number, part.data)
                 uploader.put_part(part)
 
+        for platform, cs in checksums.items():
+            if isinstance(cs, checksum.UnorderedChecksum):
+                checksums[platform] = cs.hexdigest()
+
         def _tag():
-            s3_etag = checksum.compute_composite_etag(s3_etags)
-            gs_crc32c = crc32c.google_storage_crc32c()
-            tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
+            if self.blobstore_class == S3BlobStore:
+                assert checksums['s3'] == self.blobstore.blob(key).cloud_native_checksum()
+            if self.blobstore_class == GSBlobStore:
+                assert checksums['gs'] == self.blobstore.blob(key).cloud_native_checksum()
+            tags = {SSDSObjectTag.SSDS_MD5: checksums['s3'], SSDSObjectTag.SSDS_CRC32C: checksums['gs']}
             self.blobstore.blob(key).put_tags(tags)
 
         # TODO: parallelize tagging
