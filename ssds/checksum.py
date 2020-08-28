@@ -2,7 +2,7 @@ import base64
 import typing
 import binascii
 from hashlib import md5
-from typing import Tuple, List, Dict, Optional
+from typing import Tuple, List, Set, Optional
 
 import google_crc32c
 
@@ -52,20 +52,20 @@ class S3EtagUnordered(UnorderedChecksum):
 class GScrc32cUnordered(UnorderedChecksum):
     def __init__(self):
         self._current_chunk_number = 0
-        self._chunks: Dict[int, bytes] = dict()
+        self._chunks: Set[Tuple[int, bytes]] = set()
         self._checksum = crc32c()
 
     def update(self, chunk_number: int, data: bytes):
-        self._chunks[chunk_number] = data
-        for chunk_number in sorted(self._chunks.keys()):
-            if self._current_chunk_number == chunk_number:
-                self._checksum.update(self._chunks[chunk_number])
-                del self._chunks[chunk_number]
+        self._chunks.add((chunk_number, data))
+        for chunk_number, data in sorted(self._chunks):
+            if chunk_number == self._current_chunk_number:
+                self._checksum.update(data)
+                self._chunks.remove((chunk_number, data))
                 self._current_chunk_number += 1
             else:
                 break
 
     def hexdigest(self) -> str:
-        for chunk_number in sorted(self._chunks.keys()):
-            self._checksum.update(self._chunks[chunk_number])
+        for chunk_number, data in sorted(self._chunks):
+            self._checksum.update(data)
         return self._checksum.google_storage_crc32c()
