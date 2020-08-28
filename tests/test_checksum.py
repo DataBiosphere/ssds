@@ -3,7 +3,7 @@ import io
 import os
 import sys
 import unittest
-from random import randint
+from random import randint, shuffle
 
 from google.cloud import storage
 
@@ -49,3 +49,34 @@ class TestSSDSChecksum(infra.SuppressWarningsMixin, unittest.TestCase):
             blob.upload_fileobj(fh)
         cs = ssds.checksum.md5(data).hexdigest()
         self.assertEqual(blob.e_tag.replace('"', ''), cs)
+
+    def test_s3etag_unordered(self):
+        checksums = set()
+        chunks = [(i, os.urandom(10)) for i in range(20)]
+        expected_checksum = ssds.checksum.compute_composite_etag(
+            [ssds.checksum.md5(c[1]).hexdigest() for c in chunks]
+        )
+        for _ in range(10):
+            shuffle(chunks)
+            cs = ssds.checksum.S3EtagUnordered()
+            for chunk_number, chunk in chunks:
+                cs.update(chunk_number, chunk)
+            checksums.add(cs.hexdigest())
+        self.assertEqual(1, len(checksums))
+        self.assertEqual(expected_checksum, checksums.pop())
+
+    def test_gscrc32c_unordered(self):
+        checksums = set()
+        chunks = [(i, os.urandom(10)) for i in range(5)]
+        expected_checksum = ssds.checksum.crc32c(b"".join([c[1] for c in chunks])).google_storage_crc32c()
+        for _ in range(10):
+            shuffle(chunks)
+            cs = ssds.checksum.GScrc32cUnordered()
+            for chunk_number, chunk in chunks:
+                cs.update(chunk_number, chunk)
+            checksums.add(cs.hexdigest())
+        self.assertEqual(1, len(checksums))
+        self.assertEqual(expected_checksum, checksums.pop())
+
+if __name__ == '__main__':
+    unittest.main()
