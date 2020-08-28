@@ -11,6 +11,11 @@ from ssds.deployment import Staging
 from ssds.cli import dispatch
 
 
+# output logging to stdout
+# https://stackoverflow.com/a/56144390
+logging.basicConfig()
+ssds.logger.level = logging.INFO
+
 staging_cli = dispatch.group("staging", help=__doc__, arguments={
     "--deployment": dict(type=str, default=Staging.default.name, help="SSDS Deployment")
 })
@@ -74,8 +79,6 @@ def sync_command(args: argparse.Namespace):
     """
     src = Staging[args.deployment].ssds
     dst = Staging[args.dst_deployment].ssds
-    ssds.logger.level = logging.INFO
-    ssds.logger.addHandler(logging.StreamHandler(sys.stdout))
     for _ in ssds.sync(args.submission_id, src, dst):
         pass
 
