@@ -57,10 +57,10 @@ class GScrc32cUnordered(UnorderedChecksum):
 
     def update(self, chunk_number: int, data: bytes):
         self._chunks.add((chunk_number, data))
-        for chunk_number, data in sorted(self._chunks):
-            if chunk_number == self._current_chunk_number:
+        for number, data in sorted(self._chunks):
+            if number == self._current_chunk_number:
                 self._checksum.update(data)
-                self._chunks.remove((chunk_number, data))
+                self._chunks.remove((number, data))
                 self._current_chunk_number += 1
             else:
                 break
