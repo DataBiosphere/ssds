@@ -3,7 +3,7 @@ import sys
 import logging
 import contextlib
 from concurrent.futures import ThreadPoolExecutor
-from typing import Tuple, Union, Optional, Generator
+from typing import Tuple, Union, Optional, Generator, Type
 
 from gs_chunked_io.async_collections import AsyncSet
 
@@ -24,8 +24,8 @@ class SSDSObjectTag:
     SSDS_CRC32C = "SSDS_CRC32C"
 
 class SSDS:
-    blobstore_class = BlobStore
-    bucket = str()
+    blobstore_class: Type[BlobStore]
+    bucket: str
     prefix = "submissions"
     _name_delimeter = "--"  # Not using "/" as name delimeter produces friendlier `aws s3` listing
 
