@@ -20,7 +20,7 @@ source ~/.virtualenvs/hpp/bin/activate
 
 ### Install the SSDS
 ```
-pip install git+https://github.com/xbrianh/ssds
+pip install git+https://github.com/DataBiosphere/ssds
 ```
 
 ## Using the SSDS
@@ -39,7 +39,7 @@ In the future a `release` group will be introduced for interaction with the rele
 ### Demonstration
 
 For this demo, the ssds has been configured to use the test bucket `org-hpp-ssds-staging-test`.
-This version of the ssds can be installed with `pip install git+https://github.com/xbrianh/ssds@xbrianh-quickstart`.
+This version of the ssds can be installed with `pip install git+https://github.com/DataBiosphere/ssds@xbrianh-quickstart`.
 
 Initially the bucket is empty, so we should expect no submissions to be listed:
 ```

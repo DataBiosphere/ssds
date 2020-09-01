@@ -10,7 +10,7 @@ ETags.
 
 # Installation
 ```
-pip install git+https://github.com/xbrianh/ssds
+pip install git+https://github.com/DataBiosphere/ssds
 ```
 
 # Usage
@@ -52,9 +52,9 @@ Submissions can be synced between staging deployments with
 
 
 ## Links
-Project home page [GitHub](https://github.com/xbrianh/ssds)  
+Project home page [GitHub](https://github.com/DataBiosphere/ssds)  
 
 ### Bugs
-Please report bugs, issues, feature requests, etc. on [GitHub](https://github.com/xbrianh/ssds).
+Please report bugs, issues, feature requests, etc. on [GitHub](https://github.com/DataBiosphere/ssds).
 
-![](https://travis-ci.org/xbrianh/ssds.svg?branch=master)
+![](https://travis-ci.org/DataBiosphere/ssds.svg?branch=master)
