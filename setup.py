@@ -40,7 +40,7 @@ setup(
     description="Simple data storage system for AWS and GCP.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/xbrianh/ssds.git",
+    url="https://github.com/DataBiosphere/ssds.git",
     author="Brian Hannafious",
     author_email="bhannafi@ucsc.edu",
     license="MIT",
