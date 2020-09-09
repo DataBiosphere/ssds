@@ -245,6 +245,7 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
         if "gs://" == dst.blobstore.schema:
             assert src_tags[SSDSObjectTag.SSDS_CRC32C] == dst_checksum
         elif "s3://" == dst.blobstore.schema:
+            print("DOOM", src_tags[SSDSObjectTag.SSDS_MD5], dst_checksum)
             assert src_tags[SSDSObjectTag.SSDS_MD5] == dst_checksum
         else:
             raise RuntimeError("Unknown blobstore schema!")

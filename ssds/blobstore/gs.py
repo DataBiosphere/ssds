@@ -16,7 +16,7 @@ class GSBlobStore(BlobStore):
 
     def __init__(self, bucket_name: str, billing_project: Optional[str]=None):
         self.bucket_name = bucket_name
-        self.billing_project = billing_project
+        self.billing_project = _resolve_billing_project(billing_project)
 
     def list(self, prefix=""):
         kwargs = dict()
@@ -31,10 +31,10 @@ class GSBlobStore(BlobStore):
 class GSBlob(Blob):
     def __init__(self, bucket_name: str, key: str, billing_project: Optional[str]=None):
         self.bucket_name = bucket_name
-        self.billing_project = billing_project
+        self.billing_project = _resolve_billing_project(billing_project)
         kwargs = dict()
-        if billing_project is not None:
-            kwargs['user_project'] = billing_project
+        if self.billing_project is not None:
+            kwargs['user_project'] = self.billing_project
         self._gs_bucket = _client().bucket(self.bucket_name, **kwargs)
         self.key = key
 
@@ -127,3 +127,15 @@ def _client() -> Client:
     # Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
     warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
     return Client()
+
+def _resolve_billing_project(billing_project: Optional[str]=None) -> Optional[str]:
+    if billing_project is not None:
+        return billing_project
+    elif os.environ.get('GOOGLE_PROJECT'):
+        return os.environ['GOOGLE_PROJECT']
+    elif os.environ.get('GCLOUD_PROJECT'):
+        return os.environ['GCLOUD_PROJECT']
+    elif os.environ.get('GCP_PROJECT'):
+        return os.environ['GCP_PROJECT']
+    else:
+        return None
