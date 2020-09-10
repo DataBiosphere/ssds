@@ -50,6 +50,13 @@ Submissions can be synced between staging deployments with
 	ssds staging sync --submission-id my_existing_submission_id --dst-deployment my_dst_deployment
 ```
 
+## Configuring Billing Projects for Requester Pays Google Buckets
+
+For working with requester pays Google Storage buckets, the billing project is specified by setting the
+environment variable `GOOGLE_PROJECT`, e.g.
+```
+export GOOGLE_PROJECT="my-gcp-billing-project
+```
 
 ## Links
 Project home page [GitHub](https://github.com/DataBiosphere/ssds)  
