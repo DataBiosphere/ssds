@@ -66,4 +66,4 @@ Please report bugs, issues, feature requests, etc. on [GitHub](https://github.co
 
 ![](https://travis-ci.org/DataBiosphere/ssds.svg?branch=master)
 
-<sup>1</sup>super, splendidly, sometimes, sporadically, etc.
+<sup>1</sup>super, splendidly, serendipitous, sometimes, sporadically, etc.
