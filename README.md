@@ -1,5 +1,5 @@
 # ssds
-The stupid simple data store.
+The s<sup>1</sup> simple data store.
 
 Upload directory trees to S3 or GS cloud buckets as "submissions". Each submission takes a user assigned
 identifier and a human readable name. The cloud location of the submission has the key structure
@@ -65,3 +65,5 @@ Project home page [GitHub](https://github.com/DataBiosphere/ssds)
 Please report bugs, issues, feature requests, etc. on [GitHub](https://github.com/DataBiosphere/ssds).
 
 ![](https://travis-ci.org/DataBiosphere/ssds.svg?branch=master)
+
+<sup>1</sup>super, splendidly, sometimes, sporadically, etc.
