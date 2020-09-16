@@ -81,13 +81,7 @@ class SSDS:
         Upload files from root directory and yield ssds_key for each file.
         This returns a generator that must be iterated for uploads to occur.
         """
-        existing_name = self.get_submission_name(submission_id)
-        if not name:
-            if not existing_name:
-                raise ValueError("Must provide name for new submissions")
-            name = existing_name
-        elif existing_name and existing_name != name:
-            raise ValueError("Cannot update name of existing submission")
+        name = self._check_name_exists(submission_id, name)
         for ssds_key in self._upload_local_tree(root, submission_id, name, threads):
             yield ssds_key
 
@@ -95,6 +89,7 @@ class SSDS:
         """
         Copy files from local or cloud locations into the ssds.
         """
+        name = self._check_name_exists(submission_id, name)
         if src_url.startswith("s3://"):
             bucket_name, key = src_url[5:].split("/", 1)
             size = S3Blob(bucket_name, key).size()
@@ -109,6 +104,16 @@ class SSDS:
             self._upload_oneshot(src_url, ssds_key)
         else:
             self._upload_multipart(src_url, ssds_key, part_size, threads)
+
+    def _check_name_exists(self, submission_id: str, name: Optional[str]) -> str:
+        existing_name = self.get_submission_name(submission_id)
+        if not name:
+            if not existing_name:
+                raise ValueError("Must provide name for new submissions")
+            name = existing_name
+        elif existing_name and existing_name != name:
+            raise ValueError("Cannot update name of existing submission")
+        return name
 
     def _upload_local_tree(self,
                            root: str,
