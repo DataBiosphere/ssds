@@ -100,13 +100,16 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_tags(self):
         key = f"{uuid4()}"
+        tags = dict(foo="bar", doom="gloom")
         tests = [("aws", s3_blobstore, s3_test_bucket, self._put_s3_obj),
                  ("gcp", gs_blobstore, gs_test_bucket, self._put_gs_obj)]
-        for replica_name, blobstore, bucket_name, upload in tests:
-            upload(bucket_name, key, b"")
-            tags = dict(foo="bar", doom="gloom")
-            blobstore.blob(key).put_tags(tags)
-            self.assertEqual(tags, blobstore.blob(key).get_tags())
+        for replica_name, bs, bucket_name, upload in tests:
+            with self.subTest(replica_name):
+                upload(bucket_name, key, b"")
+                bs.blob(key).put_tags(tags)
+                self.assertEqual(tags, bs.blob(key).get_tags())
+                with self.assertRaises(BlobNotFoundError):
+                    bs.blob(f"{uuid4()}").put_tags(tags)
 
     def test_exists(self):
         key = f"{uuid4()}"
