@@ -86,3 +86,12 @@ def get_s3_multipart_chunk_size(filesize: int) -> int:
         raw_part_size = ceil(filesize / AWS_MAX_MULTIPART_COUNT)
         part_size_in_integer_megabytes = ((raw_part_size + MiB - 1) // MiB) * MiB
         return part_size_in_integer_megabytes
+
+class BlobStoreError(Exception):
+    pass
+
+class BlobNotFoundError(BlobStoreError):
+    pass
+
+class BlobStoreUnknownError(BlobStoreError):
+    pass
