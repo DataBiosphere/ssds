@@ -54,13 +54,17 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         """
 
     def test_size(self):
-        tests = [("aws", s3_test_bucket, s3_blobstore, self._put_s3_obj),
-                 ("gcp", gs_test_bucket, gs_blobstore, self._put_gs_obj)]
         key = f"{uuid4()}"
-        for test_name, bucket, bs, upload in tests:
-            expected_size = randint(1, 10)
-            upload(bucket, key, os.urandom(expected_size))
-            self.assertEqual(expected_size, bs.blob(key).size())
+        expected_size = randint(1, 10)
+        data = os.urandom(expected_size)
+        tests = [("aws", self._put_s3_obj, s3_test_bucket, s3_blobstore),
+                 ("gcp", self._put_gs_obj, gs_test_bucket, gs_blobstore)]
+        for test_name, upload, bucket_name, bs in tests:
+            with self.subTest(test_name):
+                upload(bucket_name, key, data)
+                self.assertEqual(expected_size, bs.blob(key).size())
+                with self.assertRaises(BlobNotFoundError):
+                    bs.blob(f"{uuid4()}").size()
 
     def test_cloud_native_checksums(self):
         key = f"{uuid4()}"
