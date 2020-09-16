@@ -14,7 +14,8 @@ pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noq
 sys.path.insert(0, pkg_root)  # noqa
 
 from ssds import aws
-from ssds.blobstore import AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB, get_s3_multipart_chunk_size, Part
+from ssds.blobstore import (AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB, get_s3_multipart_chunk_size, Part,
+                            BlobNotFoundError)
 from ssds.blobstore.s3 import S3BlobStore, S3AsyncPartIterator, S3MultipartWriter
 from ssds.blobstore.gs import GSBlobStore, GSAsyncPartIterator, _client
 from ssds.deployment import _S3StagingTest, _GSStagingTest
@@ -35,18 +36,17 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         self.assertEqual("gs://", GSBlobStore.schema)
 
     def test_get(self):
-        with self.subTest("aws"):
-            key = f"{uuid4()}"
-            expected_data = test_data.oneshot
-            self._put_s3_obj(s3_test_bucket, key, expected_data)
-            data = S3BlobStore(s3_test_bucket).blob(key).get()
-            self.assertEqual(data, expected_data)
-        with self.subTest("gcp"):
-            key = f"{uuid4()}"
-            expected_data = test_data.oneshot
-            self._put_gs_obj(s3_test_bucket, key, expected_data)
-            data = GSBlobStore(gs_test_bucket).blob(key).get()
-            self.assertEqual(data, expected_data)
+        key = f"{uuid4()}"
+        expected_data = test_data.oneshot
+        tests = [("aws", self._put_s3_obj, s3_test_bucket, S3BlobStore),
+                 ("gcp", self._put_gs_obj, gs_test_bucket, GSBlobStore)]
+        for test_name, upload, bucket_name, bs in tests:
+            with self.subTest(test_name):
+                upload(bucket_name, key, expected_data)
+                data = bs(bucket_name).blob(key).get()
+                self.assertEqual(data, expected_data)
+                with self.assertRaises(BlobNotFoundError):
+                    bs(bucket_name).blob(f"{uuid4()}").get()
 
     def _test_put(self):
         """
