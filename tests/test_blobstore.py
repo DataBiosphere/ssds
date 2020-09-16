@@ -13,7 +13,7 @@ from google.cloud import storage
 pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noqa
 sys.path.insert(0, pkg_root)  # noqa
 
-from ssds import aws
+from ssds import aws, checksum
 from ssds.blobstore import (AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB, get_s3_multipart_chunk_size, Part,
                             BlobNotFoundError)
 from ssds.blobstore.s3 import S3BlobStore, S3AsyncPartIterator, S3MultipartWriter
@@ -68,15 +68,17 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_cloud_native_checksums(self):
         key = f"{uuid4()}"
-        with self.subTest("aws"):
-            blob = self._put_s3_obj(s3_test_bucket, key, os.urandom(1))
-            expected_checksum = blob.e_tag.strip("\"")
-            self.assertEqual(expected_checksum, S3BlobStore(s3_test_bucket).blob(key).cloud_native_checksum())
-        with self.subTest("gcp"):
-            blob = self._put_gs_obj(gs_test_bucket, key, os.urandom(1))
-            blob.reload()
-            expected_checksum = blob.crc32c
-            self.assertEqual(expected_checksum, GSBlobStore(gs_test_bucket).blob(key).cloud_native_checksum())
+        data = os.urandom(1)
+        s3_etag = checksum.md5(data).hexdigest()
+        crc32c = checksum.crc32c(data).google_storage_crc32c()
+        tests = [("aws", self._put_s3_obj, s3_test_bucket, s3_blobstore, s3_etag),
+                 ("gcp", self._put_gs_obj, gs_test_bucket, gs_blobstore, crc32c)]
+        for test_name, upload, bucket_name, bs, expected_checksum in tests:
+            with self.subTest(test_name):
+                upload(bucket_name, key, data)
+                self.assertEqual(expected_checksum, bs.blob(key).cloud_native_checksum())
+                with self.assertRaises(BlobNotFoundError):
+                    bs.blob(f"{uuid4()}").cloud_native_checksum()
 
     def test_part_iterators(self):
         _, multipart = test_data.uploaded([s3_blobstore, gs_blobstore])
