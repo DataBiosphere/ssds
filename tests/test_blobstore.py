@@ -82,19 +82,21 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_part_iterators(self):
         _, multipart = test_data.uploaded([s3_blobstore, gs_blobstore])
+        key = multipart['key']
         chunk_size = get_s3_multipart_chunk_size(len(multipart['data']))
         number_of_parts = ceil(len(multipart['data']) / chunk_size)
         expected_parts = [multipart['data'][i * chunk_size:(i + 1) * chunk_size]
                           for i in range(number_of_parts)]
-        tests = [("aws", s3_test_bucket, S3AsyncPartIterator),
-                 ("gcp", gs_test_bucket, GSAsyncPartIterator)]
-        for replica_name, bucket_name, part_iterator in tests:
+        tests = [("aws", s3_blobstore), ("gcp", gs_blobstore)]
+        for replica_name, bs in tests:
             with self.subTest(replica_name):
                 count = 0
-                for part_number, data in part_iterator(bucket_name, multipart['key'], threads=1):
+                for part_number, data in bs.blob(key).parts(threads=1):
                     self.assertEqual(expected_parts[part_number], data)
                     count += 1
                 self.assertEqual(number_of_parts, count)
+                with self.assertRaises(BlobNotFoundError):
+                    bs.blob(f"{uuid4()}").parts(threads=1)
 
     def test_tags(self):
         key = f"{uuid4()}"
