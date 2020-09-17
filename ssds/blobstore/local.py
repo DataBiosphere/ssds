@@ -20,11 +20,11 @@ class LocalBlobStore(BlobStore):
     def __init__(self, base_path: str):
         self.base_path = base_path
 
-    def list(self, prefix: str="") -> Generator[str, None, None]:
+    def list(self, prefix: str="") -> Generator["LocalBlob", None, None]:
         for (dirpath, dirnames, filenames) in os.walk(os.path.join(self.base_path, prefix)):
             for filename in filenames:
                 relpath = os.path.join(dirpath, filename)
-                yield os.path.abspath(relpath)
+                yield LocalBlob(os.path.abspath(relpath))
 
     def blob(self, key: str) -> "LocalBlob":
         return LocalBlob(key)

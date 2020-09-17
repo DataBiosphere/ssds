@@ -60,14 +60,14 @@ class SSDS:
         return self.__repr__()
 
     def list_submission(self, submission_id: str) -> Generator[str, None, None]:
-        for key in self.blobstore.list(f"{self.prefix}/{submission_id}"):
-            ssds_key = key.replace(f"{self.prefix}/", "", 1)
+        for blob in self.blobstore.list(f"{self.prefix}/{submission_id}"):
+            ssds_key = blob.key.replace(f"{self.prefix}/", "", 1)
             yield ssds_key
 
     def get_submission_name(self, submission_id: str) -> Optional[str]:
         name = None
-        for key in self.blobstore.list(f"{self.prefix}/{submission_id}"):
-            ssds_key = key.strip(f"{self.prefix}/")
+        for blob in self.blobstore.list(f"{self.prefix}/{submission_id}"):
+            ssds_key = blob.key.strip(f"{self.prefix}/")
             _, parts = ssds_key.split(self._name_delimeter, 1)
             name, _ = parts.split("/", 1)
             break
@@ -134,20 +134,20 @@ class SSDS:
             oneshot_uploads = AsyncSet(e, concurrency=threads)
 
         with e:
-            for key in LocalBlobStore(root).list():
+            for blob in LocalBlobStore(root).list():
                 if oneshot_uploads is not None:
                     for ssds_key in oneshot_uploads.consume_finished():
                         yield ssds_key
-                ssds_key = self._compose_ssds_key(submission_id, name, os.path.relpath(key, root))
-                size = LocalBlob(key).size()
+                ssds_key = self._compose_ssds_key(submission_id, name, os.path.relpath(blob.key, root))
+                size = blob.size()
                 part_size = get_s3_multipart_chunk_size(size)
                 if part_size >= size:
                     if oneshot_uploads is not None:
-                        oneshot_uploads.put(self._upload_oneshot, key, ssds_key)
+                        oneshot_uploads.put(self._upload_oneshot, blob.key, ssds_key)
                     else:
-                        yield self._upload_oneshot(key, ssds_key)
+                        yield self._upload_oneshot(blob.key, ssds_key)
                 else:
-                    yield self._upload_multipart(key, ssds_key, part_size, threads)
+                    yield self._upload_multipart(blob.key, ssds_key, part_size, threads)
             if oneshot_uploads is not None:
                 for ssds_key in oneshot_uploads.consume():
                     yield ssds_key
@@ -264,20 +264,20 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
     threads = 3
     with ThreadPoolExecutor(max_workers=threads) as e:
         oneshot_uploads = AsyncSet(e, threads)
-        for key in src.blobstore.list(f"{src.prefix}/{submission_id}"):
-            parts = src.blobstore.blob(key).parts(threads=threads)
+        for blob in src.blobstore.list(f"{src.prefix}/{submission_id}"):
+            parts = src.blobstore.blob(blob.key).parts(threads=threads)
             if 1 == len(parts):
-                oneshot_uploads.put(_sync_oneshot, key, list(parts)[0].data)
+                oneshot_uploads.put(_sync_oneshot, blob.key, list(parts)[0].data)
             else:
-                if not _already_synced(key):
-                    logger.info(f"syncing {key} from {src} to {dst}")
-                    with dst.blobstore.blob(key).multipart_writer(threads=threads) as writer:
+                if not _already_synced(blob.key):
+                    logger.info(f"syncing {blob.key} from {src} to {dst}")
+                    with dst.blobstore.blob(blob.key).multipart_writer(threads=threads) as writer:
                         for part in parts:
                             writer.put_part(part)
-                    _verify_and_tag(key)
-                    yield key
+                    _verify_and_tag(blob.key)
+                    yield blob.key
                 else:
-                    logger.info(f"already-synced {key} from {src} to {dst}")
+                    logger.info(f"already-synced {blob.key} from {src} to {dst}")
             for synced_key in oneshot_uploads.consume_finished():
                 yield synced_key
         for synced_key in oneshot_uploads.consume():

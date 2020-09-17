@@ -32,9 +32,9 @@ class S3BlobStore(BlobStore):
     def __init__(self, bucket_name: str):
         self.bucket_name = bucket_name
 
-    def list(self, prefix=""):
+    def list(self, prefix="") -> Generator["S3Blob", None, None]:
         for item in aws.resource("s3").Bucket(self.bucket_name).objects.filter(Prefix=prefix):
-            yield item.key
+            yield S3Blob(self.bucket_name, item.key)
 
     def blob(self, key: str) -> "S3Blob":
         return S3Blob(self.bucket_name, key)
