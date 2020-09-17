@@ -13,6 +13,7 @@ sys.path.insert(0, pkg_root)  # noqa
 
 import ssds
 import ssds.blobstore
+from ssds.blobstore.local import LocalBlob, LocalBlobStore
 from ssds.deployment import _S3StagingTest, _GSStagingTest
 from tests import infra, TestData
 
@@ -52,12 +53,12 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                     for ssds_key in ds.upload(root, submission_id, submission_name, threads):
                         pass
                     print(f"{test_name} upload duration:", time.time() - start_time)
-                    for filepath in ssds._list_tree(root):
+                    for key in LocalBlobStore().list(root):
                         expected_ssds_key = ds._compose_ssds_key(submission_id,
                                                                  submission_name,
-                                                                 os.path.relpath(filepath, root))
-                        key = f"{ds.prefix}/{expected_ssds_key}"
-                        self.assertEqual(os.path.getsize(filepath), ds.blobstore.blob(key).size())
+                                                                 os.path.relpath(key, root))
+                        dst_key = f"{ds.prefix}/{expected_ssds_key}"
+                        self.assertEqual(LocalBlob(key).size(), ds.blobstore.blob(dst_key).size())
 
     def test_upload_name_length_error(self):
         with tempfile.TemporaryDirectory() as dirname:
