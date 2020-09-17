@@ -7,6 +7,7 @@ import unittest
 from math import ceil
 from uuid import uuid4
 from random import randint
+from typing import Optional
 
 from google.cloud import storage
 
@@ -36,13 +37,12 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         self.assertEqual("gs://", GSBlobStore.schema)
 
     def test_get(self):
-        key = f"{uuid4()}"
         expected_data = test_data.oneshot
         tests = [("aws", self._put_s3_obj, s3_test_bucket, S3BlobStore),
                  ("gcp", self._put_gs_obj, gs_test_bucket, GSBlobStore)]
         for test_name, upload, bucket_name, bs in tests:
             with self.subTest(test_name):
-                upload(bucket_name, key, expected_data)
+                key = upload(bucket_name, expected_data)
                 data = bs(bucket_name).blob(key).get()
                 self.assertEqual(data, expected_data)
                 with self.assertRaises(BlobNotFoundError):
@@ -54,20 +54,18 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         """
 
     def test_size(self):
-        key = f"{uuid4()}"
         expected_size = randint(1, 10)
         data = os.urandom(expected_size)
         tests = [("aws", self._put_s3_obj, s3_test_bucket, s3_blobstore),
                  ("gcp", self._put_gs_obj, gs_test_bucket, gs_blobstore)]
         for test_name, upload, bucket_name, bs in tests:
             with self.subTest(test_name):
-                upload(bucket_name, key, data)
+                key = upload(bucket_name, data)
                 self.assertEqual(expected_size, bs.blob(key).size())
                 with self.assertRaises(BlobNotFoundError):
                     bs.blob(f"{uuid4()}").size()
 
     def test_cloud_native_checksums(self):
-        key = f"{uuid4()}"
         data = os.urandom(1)
         s3_etag = checksum.md5(data).hexdigest()
         crc32c = checksum.crc32c(data).google_storage_crc32c()
@@ -75,7 +73,7 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                  ("gcp", self._put_gs_obj, gs_test_bucket, gs_blobstore, crc32c)]
         for test_name, upload, bucket_name, bs, expected_checksum in tests:
             with self.subTest(test_name):
-                upload(bucket_name, key, data)
+                key = upload(bucket_name, data)
                 self.assertEqual(expected_checksum, bs.blob(key).cloud_native_checksum())
                 with self.assertRaises(BlobNotFoundError):
                     bs.blob(f"{uuid4()}").cloud_native_checksum()
@@ -99,13 +97,12 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                     bs.blob(f"{uuid4()}").parts(threads=1)
 
     def test_tags(self):
-        key = f"{uuid4()}"
         tags = dict(foo="bar", doom="gloom")
         tests = [("aws", s3_blobstore, s3_test_bucket, self._put_s3_obj),
                  ("gcp", gs_blobstore, gs_test_bucket, self._put_gs_obj)]
         for replica_name, bs, bucket_name, upload in tests:
             with self.subTest(replica_name):
-                upload(bucket_name, key, b"")
+                key = upload(bucket_name, b"")
                 bs.blob(key).put_tags(tags)
                 self.assertEqual(tags, bs.blob(key).get_tags())
                 with self.assertRaises(BlobNotFoundError):
@@ -118,18 +115,20 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         for replica_name, blobstore, bucket_name, upload in tests:
             with self.subTest(replica=replica_name):
                 self.assertFalse(blobstore.blob(key).exists())
-                upload(bucket_name, key, b"")
+                upload(bucket_name, b"", key=key)
                 self.assertTrue(blobstore.blob(key).exists())
 
-    def _put_s3_obj(self, bucket, key, data):
+    def _put_s3_obj(self, bucket: str, data: bytes, key: Optional[str]=None) -> str:
+        key = key or f"{uuid4()}"
         blob = aws.resource("s3").Bucket(bucket).Object(key)
         blob.upload_fileobj(io.BytesIO(data))
-        return blob
+        return key
 
-    def _put_gs_obj(self, bucket, key, data):
+    def _put_gs_obj(self, bucket: str, data: bytes, key: Optional[str]=None) -> str:
+        key = key or f"{uuid4()}"
         blob = _client().bucket(bucket).blob(key)
         blob.upload_from_file(io.BytesIO(data))
-        return blob
+        return key
 
     def test_s3_multipart_writer(self):
         expected_data = test_data.multipart
