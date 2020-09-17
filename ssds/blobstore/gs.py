@@ -19,12 +19,12 @@ class GSBlobStore(BlobStore):
         self.bucket_name = bucket_name
         self.billing_project = _resolve_billing_project(billing_project)
 
-    def list(self, prefix=""):
+    def list(self, prefix="") -> Generator["GSBlob", None, None]:
         kwargs = dict()
         if self.billing_project is not None:
             kwargs['user_project'] = self.billing_project
         for blob in _client().bucket(self.bucket_name, **kwargs).list_blobs(prefix=prefix):
-            yield blob.name
+            yield GSBlob(self.bucket_name, blob.name, self.billing_project)
 
     def blob(self, key: str) -> "GSBlob":
         return GSBlob(self.bucket_name, key, self.billing_project)
