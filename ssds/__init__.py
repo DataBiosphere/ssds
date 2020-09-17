@@ -90,21 +90,23 @@ class SSDS:
         """
         Copy files from local or cloud locations into the ssds.
         """
+        src_blob: Union[S3Blob, GSBlob, LocalBlob]
         name = self._check_name_exists(submission_id, name)
         if src_url.startswith("s3://"):
             bucket_name, key = src_url[5:].split("/", 1)
-            size = S3Blob(bucket_name, key).size()
+            src_blob = S3Blob(bucket_name, key)
         elif src_url.startswith("gs://"):
             bucket_name, key = src_url[5:].split("/", 1)
-            size = GSBlob(bucket_name, key).size()
+            src_blob = GSBlob(bucket_name, key)
         else:
-            size = os.path.getsize(src_url)
+            src_blob = LocalBlob("/", src_url)
+        size = src_blob.size()
         ssds_key = self._compose_ssds_key(submission_id, name, submission_path)
         part_size = get_s3_multipart_chunk_size(size)
         if part_size >= size:
-            self._upload_oneshot(src_url, ssds_key)
+            self._upload_oneshot(src_blob, ssds_key)
         else:
-            self._upload_multipart(src_url, ssds_key, part_size, threads)
+            self._upload_multipart(src_blob, ssds_key, part_size, threads)
 
     def _check_name_exists(self, submission_id: str, name: Optional[str]) -> str:
         existing_name = self.get_submission_name(submission_id)
@@ -138,16 +140,16 @@ class SSDS:
                 if oneshot_uploads is not None:
                     for ssds_key in oneshot_uploads.consume_finished():
                         yield ssds_key
-                ssds_key = self._compose_ssds_key(submission_id, name, os.path.relpath(blob.key, root))
+                ssds_key = self._compose_ssds_key(submission_id, name, blob.key)
                 size = blob.size()
                 part_size = get_s3_multipart_chunk_size(size)
                 if part_size >= size:
                     if oneshot_uploads is not None:
-                        oneshot_uploads.put(self._upload_oneshot, blob.key, ssds_key)
+                        oneshot_uploads.put(self._upload_oneshot, blob, ssds_key)
                     else:
-                        yield self._upload_oneshot(blob.key, ssds_key)
+                        yield self._upload_oneshot(blob, ssds_key)
                 else:
-                    yield self._upload_multipart(blob.key, ssds_key, part_size, threads)
+                    yield self._upload_multipart(blob, ssds_key, part_size, threads)
             if oneshot_uploads is not None:
                 for ssds_key in oneshot_uploads.consume():
                     yield ssds_key
@@ -162,17 +164,9 @@ class SSDS:
                              f"Use a shorter submission name")
         return ssds_key
 
-    def _upload_oneshot(self, url: str, ssds_key: str) -> str:
+    def _upload_oneshot(self, src_blob: Blob, ssds_key: str) -> str:
+        data = src_blob.get()
         dst_key = f"{self.prefix}/{ssds_key}"
-        if url.startswith("s3://"):
-            bucket_name, key = url[5:].split("/", 1)
-            data = S3Blob(bucket_name, key).get()
-        elif url.startswith("gs://"):
-            bucket_name, key = url[5:].split("/", 1)
-            data = GSBlob(bucket_name, key).get()
-        else:
-            with open(url, "rb") as fh:
-                data = fh.read()
         gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
         s3_etag = checksum.md5(data).hexdigest()
         self.blobstore.blob(dst_key).put(data)
@@ -181,28 +175,22 @@ class SSDS:
         return ssds_key
 
     def _upload_multipart(self,
-                          url: str,
+                          src_blob: Blob,
                           ssds_key: str,
                           part_size: int,
                           threads: Optional[int]) -> str:
         checksums: Dict[str, Union[str, checksum.UnorderedChecksum]]
-        if url.startswith("s3://"):
-            bucket_name, key = url[5:].split("/", 1)
-            s3_blob = S3Blob(bucket_name, key)
-            parts = s3_blob.parts(threads)
-            # s3 -> s3 must recompute the s3etag because the part layout may change
+        if isinstance(src_blob, S3Blob):
             checksums = dict(s3=checksum.S3EtagUnordered(), gs=checksum.GScrc32cUnordered())
-        elif url.startswith("gs://"):
-            bucket_name, key = url[5:].split("/", 1)
-            gs_blob = GSBlob(bucket_name, key)
-            parts = gs_blob.parts(threads)  # type: ignore
-            checksums = dict(s3=checksum.S3EtagUnordered(), gs=gs_blob.cloud_native_checksum())
+        elif isinstance(src_blob, GSBlob):
+            checksums = dict(s3=checksum.S3EtagUnordered(), gs=src_blob.cloud_native_checksum())
+        elif isinstance(src_blob, LocalBlob):
+            checksums = dict(s3=checksum.S3EtagUnordered(), gs=checksum.GScrc32cUnordered())
         else:
-            parts = LocalBlob(url).parts()
-            checksums = dict(s3=checksum.S3EtagUnordered(), gs=checksum.GScrc32cUnordered())
+            raise TypeError(f"Unknown blob type {type(src_blob)}")
         key = f"{self.prefix}/{ssds_key}"
         with self.blobstore.blob(key).multipart_writer(threads) as uploader:
-            for part in parts:
+            for part in src_blob.parts(threads):
                 for cs in checksums.values():
                     if isinstance(cs, checksum.UnorderedChecksum):
                         cs.update(part.number, part.data)
