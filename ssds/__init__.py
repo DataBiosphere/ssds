@@ -11,6 +11,7 @@ from ssds import checksum
 from ssds.blobstore import Blob, BlobStore, get_s3_multipart_chunk_size, Part
 from ssds.blobstore.s3 import S3Blob, S3BlobStore
 from ssds.blobstore.gs import GSBlob, GSBlobStore
+from ssds.blobstore.local import LocalBlob, LocalBlobStore
 
 
 logger = logging.getLogger(__name__)
@@ -133,20 +134,20 @@ class SSDS:
             oneshot_uploads = AsyncSet(e, concurrency=threads)
 
         with e:
-            for filepath in _list_tree(root):
+            for key in LocalBlobStore(root).list():
                 if oneshot_uploads is not None:
                     for ssds_key in oneshot_uploads.consume_finished():
                         yield ssds_key
-                ssds_key = self._compose_ssds_key(submission_id, name, os.path.relpath(filepath, root))
-                size = os.path.getsize(filepath)
+                ssds_key = self._compose_ssds_key(submission_id, name, os.path.relpath(key, root))
+                size = LocalBlob(key).size()
                 part_size = get_s3_multipart_chunk_size(size)
                 if part_size >= size:
                     if oneshot_uploads is not None:
-                        oneshot_uploads.put(self._upload_oneshot, filepath, ssds_key)
+                        oneshot_uploads.put(self._upload_oneshot, key, ssds_key)
                     else:
-                        yield self._upload_oneshot(filepath, ssds_key)
+                        yield self._upload_oneshot(key, ssds_key)
                 else:
-                    yield self._upload_multipart(filepath, ssds_key, part_size, threads)
+                    yield self._upload_multipart(key, ssds_key, part_size, threads)
             if oneshot_uploads is not None:
                 for ssds_key in oneshot_uploads.consume():
                     yield ssds_key
@@ -197,7 +198,7 @@ class SSDS:
             parts = gs_blob.parts(threads)  # type: ignore
             checksums = dict(s3=checksum.S3EtagUnordered(), gs=gs_blob.cloud_native_checksum())
         else:
-            parts = _file_part_iterator(url)  # type: ignore
+            parts = LocalBlob(url).parts()
             checksums = dict(s3=checksum.S3EtagUnordered(), gs=checksum.GScrc32cUnordered())
         key = f"{self.prefix}/{ssds_key}"
         with self.blobstore.blob(key).multipart_writer(threads) as uploader:
@@ -225,23 +226,6 @@ class SSDS:
 
     def compose_blobstore_url(self, ssds_key: str) -> str:
         return f"{self.blobstore.schema}{self.bucket}/{self.prefix}/{ssds_key}"
-
-def _file_part_iterator(filepath: str) -> Generator[Part, None, None]:
-    part_number = 0
-    part_size = get_s3_multipart_chunk_size(os.path.getsize(filepath))
-    with open(filepath, "rb") as fh:
-        while True:
-            data = fh.read(part_size)
-            if not data:
-                break
-            yield Part(part_number, data)
-            part_number += 1
-
-def _list_tree(root) -> Generator[str, None, None]:
-    for (dirpath, dirnames, filenames) in os.walk(root):
-        for filename in filenames:
-            relpath = os.path.join(dirpath, filename)
-            yield os.path.abspath(relpath)
 
 def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]:
     def _verify_and_tag(key: str):
