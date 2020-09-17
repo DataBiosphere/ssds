@@ -23,6 +23,10 @@ class LocalBlob(Blob):
     def __init__(self, path: str):
         self.key = path
 
+    def get(self) -> bytes:
+        with open(self.key, "rb") as fh:
+            return fh.read()
+
     def size(self) -> int:
         return os.path.getsize(self.key)
 
