@@ -38,15 +38,15 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_get(self):
         expected_data = test_data.oneshot
-        tests = [("aws", self._put_s3_obj, s3_test_bucket, S3BlobStore),
-                 ("gcp", self._put_gs_obj, gs_test_bucket, GSBlobStore)]
+        tests = [("aws", self._put_s3_obj, s3_test_bucket, s3_blobstore),
+                 ("gcp", self._put_gs_obj, gs_test_bucket, gs_blobstore)]
         for test_name, upload, bucket_name, bs in tests:
             with self.subTest(test_name):
                 key = upload(bucket_name, expected_data)
-                data = bs(bucket_name).blob(key).get()
+                data = bs.blob(key).get()
                 self.assertEqual(data, expected_data)
                 with self.assertRaises(BlobNotFoundError):
-                    bs(bucket_name).blob(f"{uuid4()}").get()
+                    bs.blob(f"{uuid4()}").get()
 
     def _test_put(self):
         """
@@ -86,8 +86,8 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         expected_parts = [multipart['data'][i * chunk_size:(i + 1) * chunk_size]
                           for i in range(number_of_parts)]
         tests = [("aws", s3_blobstore), ("gcp", gs_blobstore)]
-        for replica_name, bs in tests:
-            with self.subTest(replica_name):
+        for test_name, bs in tests:
+            with self.subTest(test_name):
                 count = 0
                 for part_number, data in bs.blob(key).parts(threads=1):
                     self.assertEqual(expected_parts[part_number], data)
@@ -98,10 +98,10 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_tags(self):
         tags = dict(foo="bar", doom="gloom")
-        tests = [("aws", s3_blobstore, s3_test_bucket, self._put_s3_obj),
-                 ("gcp", gs_blobstore, gs_test_bucket, self._put_gs_obj)]
-        for replica_name, bs, bucket_name, upload in tests:
-            with self.subTest(replica_name):
+        tests = [("aws", self._put_s3_obj, s3_test_bucket, s3_blobstore),
+                 ("gcp", self._put_gs_obj, gs_test_bucket, gs_blobstore)]
+        for test_name, upload, bucket_name, bs in tests:
+            with self.subTest(test_name):
                 key = upload(bucket_name, b"")
                 bs.blob(key).put_tags(tags)
                 self.assertEqual(tags, bs.blob(key).get_tags())
@@ -110,13 +110,13 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_exists(self):
         key = f"{uuid4()}"
-        tests = [("aws", s3_blobstore, s3_test_bucket, self._put_s3_obj),
-                 ("gcp", gs_blobstore, gs_test_bucket, self._put_gs_obj)]
-        for replica_name, blobstore, bucket_name, upload in tests:
-            with self.subTest(replica=replica_name):
-                self.assertFalse(blobstore.blob(key).exists())
+        tests = [("aws", self._put_s3_obj, s3_test_bucket, s3_blobstore),
+                 ("gcp", self._put_gs_obj, gs_test_bucket, gs_blobstore)]
+        for test_name, upload, bucket_name, bs in tests:
+            with self.subTest(replica=test_name):
+                self.assertFalse(bs.blob(key).exists())
                 upload(bucket_name, b"", key=key)
-                self.assertTrue(blobstore.blob(key).exists())
+                self.assertTrue(bs.blob(key).exists())
 
     def _put_s3_obj(self, bucket: str, data: bytes, key: Optional[str]=None) -> str:
         key = key or f"{uuid4()}"
