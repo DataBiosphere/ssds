@@ -83,6 +83,7 @@ class SSDS:
         This returns a generator that must be iterated for uploads to occur.
         """
         name = self._check_name_exists(submission_id, name)
+        root = os.path.realpath(os.path.normpath(root))
         for ssds_key in self._upload_local_tree(root, submission_id, name, threads):
             yield ssds_key
 
@@ -104,7 +105,8 @@ class SSDS:
         if part_size >= size:
             self._upload_oneshot(src_url, ssds_key)
         else:
-            self._upload_multipart(src_url, ssds_key, part_size, threads)
+            root = os.path.realpath(os.path.normpath(src_url))
+            self._upload_multipart(root, ssds_key, part_size, threads)
 
     def _check_name_exists(self, submission_id: str, name: Optional[str]) -> str:
         existing_name = self.get_submission_name(submission_id)
@@ -121,8 +123,6 @@ class SSDS:
                            submission_id: str,
                            name: str,
                            threads: Optional[int]=None) -> Generator[str, None, None]:
-        root = os.path.normpath(root)
-        assert root == os.path.abspath(root)
         assert " " not in name  # TODO: create regex to enforce name format?
         assert self._name_delimeter not in name  # TODO: create regex to enforce name format?
 
