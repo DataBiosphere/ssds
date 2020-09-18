@@ -83,6 +83,7 @@ class SSDS:
         This returns a generator that must be iterated for uploads to occur.
         """
         name = self._check_name_exists(submission_id, name)
+        root = os.path.realpath(os.path.normpath(root))
         for ssds_key in self._upload_local_tree(root, submission_id, name, threads):
             yield ssds_key
 
@@ -99,7 +100,7 @@ class SSDS:
             bucket_name, key = src_url[5:].split("/", 1)
             src_blob = GSBlob(bucket_name, key)
         else:
-            src_blob = LocalBlob("/", src_url)
+            src_blob = LocalBlob("/", os.path.realpath(os.path.normpath(src_url)))
         size = src_blob.size()
         ssds_key = self._compose_ssds_key(submission_id, name, submission_path)
         part_size = get_s3_multipart_chunk_size(size)
@@ -123,8 +124,6 @@ class SSDS:
                            submission_id: str,
                            name: str,
                            threads: Optional[int]=None) -> Generator[str, None, None]:
-        root = os.path.normpath(root)
-        assert root == os.path.abspath(root)
         assert " " not in name  # TODO: create regex to enforce name format?
         assert self._name_delimeter not in name  # TODO: create regex to enforce name format?
 
