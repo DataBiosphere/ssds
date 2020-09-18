@@ -54,11 +54,9 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                         pass
                     print(f"{test_name} upload duration:", time.time() - start_time)
                     for blob in LocalBlobStore(root).list():
-                        expected_ssds_key = ds._compose_ssds_key(submission_id,
-                                                                 submission_name,
-                                                                 os.path.relpath(blob.key, root))
+                        expected_ssds_key = ds._compose_ssds_key(submission_id, submission_name, blob.key)
                         dst_key = f"{ds.prefix}/{expected_ssds_key}"
-                        self.assertEqual(LocalBlob(blob.key).size(), ds.blobstore.blob(dst_key).size())
+                        self.assertEqual(blob.size(), ds.blobstore.blob(dst_key).size())
 
     def test_upload_name_length_error(self):
         with tempfile.TemporaryDirectory() as dirname:

@@ -17,33 +17,36 @@ def catch_blob_not_found(func):
     return wrapper
 
 class LocalBlobStore(BlobStore):
-    def __init__(self, base_path: str):
-        self.base_path = base_path
+    def __init__(self, basepath: str):
+        self.bucket_name = basepath
 
     def list(self, prefix: str="") -> Generator["LocalBlob", None, None]:
-        for (dirpath, dirnames, filenames) in os.walk(os.path.join(self.base_path, prefix)):
+        for (dirpath, dirnames, filenames) in os.walk(os.path.join(self.bucket_name, prefix)):
             for filename in filenames:
-                relpath = os.path.join(dirpath, filename)
-                yield LocalBlob(os.path.abspath(relpath))
+                relpath = os.path.relpath(os.path.join(dirpath, filename), self.bucket_name)
+                yield LocalBlob(self.bucket_name, relpath)
 
     def blob(self, key: str) -> "LocalBlob":
-        return LocalBlob(key)
+        return LocalBlob(self.bucket_name, key)
 
 class LocalBlob(Blob):
-    def __init__(self, path: str):
-        self.key = path
+    def __init__(self, basepath: str, relpath: str):
+        assert basepath == os.path.abspath(basepath)
+        self.bucket_name = basepath
+        self.key = relpath
+        self._path = os.path.join(basepath, relpath)
 
     @catch_blob_not_found
     def get(self) -> bytes:
-        with open(self.key, "rb") as fh:
+        with open(self._path, "rb") as fh:
             return fh.read()
 
     @catch_blob_not_found
     def size(self) -> int:
-        return os.path.getsize(self.key)
+        return os.path.getsize(self._path)
 
-    def parts(self):
-        return LocalAsyncPartIterator(self.key)
+    def parts(self, threads: Optional[int]=None):
+        return LocalAsyncPartIterator(self._path)
 
 class LocalAsyncPartIterator:
     def __init__(self, path: str):
