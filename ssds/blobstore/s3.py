@@ -21,7 +21,9 @@ def catch_blob_not_found(func):
         try:
             return func(self, *args, **kwargs)
         except botocore.exceptions.ClientError as ex:
-            if ex.response['Error']['Code'] in [str(requests.codes.not_found), "NoSuchKey"]:
+            if ex.response['Error']['Code'] in [str(requests.codes.not_found),
+                                                str(requests.codes.bad_request),
+                                                "NoSuchKey"]:
                 raise BlobNotFoundError(f"Could not find s3://{self.bucket_name}/{self.key}") from ex
             raise BlobStoreUnknownError(ex)
     return wrapper
