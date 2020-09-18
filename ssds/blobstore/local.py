@@ -46,14 +46,14 @@ class LocalBlob(Blob):
         return LocalAsyncPartIterator(self.key)
 
 class LocalAsyncPartIterator:
-    def __init__(self, key: str):
+    def __init__(self, path: str):
         try:
-            self.size = os.path.getsize(key)
+            self.size = os.path.getsize(path)
         except FileNotFoundError:
-            raise BlobNotFoundError(f"Could not find {key}")
+            raise BlobNotFoundError(f"Could not find {path}")
         self.chunk_size = get_s3_multipart_chunk_size(self.size)
         self._number_of_parts = ceil(self.size / self.chunk_size) if 0 < self.size else 1
-        self.handle = open(key, "rb")
+        self.handle = open(path, "rb")
 
     def __len__(self):
         return self._number_of_parts
@@ -67,7 +67,8 @@ class LocalAsyncPartIterator:
         return Part(part_number, self.handle.read(self.chunk_size))
 
     def close(self):
-        self.handle.close()
+        if hasattr(self, "handle"):
+            self.handle.close()
 
     def __del__(self):
         self.close()
