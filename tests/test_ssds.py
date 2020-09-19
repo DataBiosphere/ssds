@@ -16,6 +16,7 @@ import ssds.blobstore
 from ssds.blobstore.local import LocalBlob, LocalBlobStore
 from ssds.deployment import _S3StagingTest, _GSStagingTest
 from tests import infra, TestData
+from tests.fixtures.populate import populate_fixtures
 
 
 ssds.logger.level = logging.INFO
@@ -31,68 +32,71 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def setUpClass(cls):
         cls._old_aws_min_chunk_size = ssds.blobstore.AWS_MIN_CHUNK_SIZE
         ssds.blobstore.AWS_MIN_CHUNK_SIZE = 1024 * 1024 * 5
-        cls.test_data = TestData(7, ssds.blobstore.AWS_MIN_CHUNK_SIZE + 1)
+        oneshot_size = 7
+        multpart_size = 2 * ssds.blobstore.AWS_MIN_CHUNK_SIZE + 1
+        cls.test_data = TestData(oneshot_size, multpart_size)
+
+        cls.tempdir = tempfile.TemporaryDirectory()
+        cls.testdir = cls.tempdir.name
+        cls.submission_tree, cls.multifile_pfx = populate_fixtures(cls.testdir,
+                                                                   cls.test_data.oneshot,
+                                                                   cls.test_data.multipart)
+        cls.singlefile_testdir = os.path.join(cls.testdir, "singelfile")
 
     @classmethod
     def tearDownClass(cls):
         ssds.blobstore.AWS_MIN_CHUNK_SIZE = cls._old_aws_min_chunk_size
 
     def test_upload(self):
-        with tempfile.TemporaryDirectory() as dirname:
-            root = self._prepare_local_submission_dir(dirname)
-            submission_name = "this_is_a_test_submission"
-            tests = [
-                ("aws sync", S3_SSDS, f"{uuid4()}", None),
-                ("aws async", S3_SSDS, f"{uuid4()}", 4),
-                ("gcp sync", GS_SSDS, f"{uuid4()}", None),
-                ("gcp async", GS_SSDS, f"{uuid4()}", 4),
-            ]
-            for test_name, ds, submission_id, threads in tests:
-                with self.subTest(test_name):
-                    start_time = time.time()
-                    for ssds_key in ds.upload(root, submission_id, submission_name, threads):
-                        pass
-                    print(f"{test_name} upload duration:", time.time() - start_time)
-                    for blob in LocalBlobStore(root).list():
-                        expected_ssds_key = ds._compose_ssds_key(submission_id, submission_name, blob.key)
-                        dst_key = f"{ds.prefix}/{expected_ssds_key}"
-                        self.assertEqual(blob.size(), ds.blobstore.blob(dst_key).size())
+        submission_name = "this_is_a_test_submission"
+        tests = [
+            ("aws sync", S3_SSDS, f"{uuid4()}", None),
+            ("aws async", S3_SSDS, f"{uuid4()}", 4),
+            ("gcp sync", GS_SSDS, f"{uuid4()}", None),
+            ("gcp async", GS_SSDS, f"{uuid4()}", 4),
+        ]
+        for test_name, ds, submission_id, threads in tests:
+            with self.subTest(test_name):
+                start_time = time.time()
+                for ssds_key in ds.upload(self.testdir, submission_id, submission_name, threads):
+                    pass
+                print(f"{test_name} upload duration:", time.time() - start_time)
+                for blob in LocalBlobStore(self.testdir).list():
+                    expected_ssds_key = ds._compose_ssds_key(submission_id, submission_name, blob.key)
+                    dst_key = f"{ds.prefix}/{expected_ssds_key}"
+                    self.assertEqual(blob.size(), ds.blobstore.blob(dst_key).size())
 
     def test_upload_name_length_error(self):
-        with tempfile.TemporaryDirectory() as dirname:
-            root = self._prepare_local_submission_dir(dirname, single_file=True)
-            submission_id = f"{uuid4()}"
-            submission_name = "a" * ssds.MAX_KEY_LENGTH
-            with self.subTest("aws"):
-                with self.assertRaises(ValueError):
-                    for _ in S3_SSDS.upload(root, submission_id, submission_name):
-                        pass
-            with self.subTest("gcp"):
-                with self.assertRaises(ValueError):
-                    for _ in GS_SSDS.upload(root, submission_id, submission_name):
-                        pass
+        submission_id = f"{uuid4()}"
+        submission_name = "a" * ssds.MAX_KEY_LENGTH
+        with self.subTest("aws"):
+            with self.assertRaises(ValueError):
+                for _ in S3_SSDS.upload(self.testdir, submission_id, submission_name):
+                    pass
+        with self.subTest("gcp"):
+            with self.assertRaises(ValueError):
+                for _ in GS_SSDS.upload(self.testdir, submission_id, submission_name):
+                    pass
 
     def test_upload_name_collisions(self):
-        with tempfile.TemporaryDirectory() as dirname:
-            root = self._prepare_local_submission_dir(dirname, single_file=True)
-            submission_id = f"{uuid4()}"
-            submission_name = None
-            with self.subTest("Must provide name for new submission"):
-                with self.assertRaises(ValueError):
-                    for _ in S3_SSDS.upload(root, submission_id, submission_name):
-                        pass
-            with self.subTest("Should succeed with a name"):
-                submission_name = "name_collision_test_submission"
-                for ssds_key in S3_SSDS.upload(root, submission_id, submission_name):
-                    print(S3_SSDS.compose_blobstore_url(ssds_key))
-            with self.subTest("Should raise if provided name collides with existing name"):
-                submission_name = "name_collision_test_submission_wrong_name"
-                with self.assertRaises(ValueError):
-                    for ssds_key in S3_SSDS.upload(root, submission_id, submission_name):
-                        pass
-            with self.subTest("Submitting submission again should succeed while omitting name"):
-                for ssds_key in S3_SSDS.upload(root, submission_id):
-                    print(S3_SSDS.compose_blobstore_url(ssds_key))
+        submission_id = f"{uuid4()}"
+        submission_name = None
+        with self.subTest("Must provide name for new submission"):
+            with self.assertRaises(ValueError):
+                for _ in S3_SSDS.upload(self.singlefile_testdir, submission_id, submission_name):
+                    pass
+        with self.subTest("Should succeed with a name"):
+            submission_name = "name_collision_test_submission"
+            for ssds_key in S3_SSDS.upload(self.singlefile_testdir, submission_id, submission_name):
+                print(S3_SSDS.compose_blobstore_url(ssds_key))
+        with self.subTest("Should raise if provided name collides with existing name"):
+            submission_name = "name_collision_test_submission_wrong_name"
+            with self.assertRaises(ValueError):
+                for ssds_key in S3_SSDS.upload(self.singlefile_testdir, submission_id, submission_name):
+                    pass
+        with self.subTest("Submitting submission again should succeed while omitting name"):
+            for ssds_key in S3_SSDS.upload(self.singlefile_testdir, submission_id):
+                print(S3_SSDS.compose_blobstore_url(ssds_key))
 
     def test_copy_local_to_cloud(self):
         submission_id = f"{uuid4()}"
@@ -159,14 +163,12 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
         ]
         for test_name, src, dst in tests:
             with self.subTest(test_name):
-                with tempfile.TemporaryDirectory() as dirname:
-                    root = self._prepare_local_submission_dir(dirname)
-                    submission_id = f"{uuid4()}"
-                    submission_name = "this_is_a_test_submission_for_sync"
-                    uploaded_keys = [ssds_key for ssds_key in src.upload(root,
-                                                                         submission_id,
-                                                                         submission_name,
-                                                                         threads=4)]
+                submission_id = f"{uuid4()}"
+                submission_name = "this_is_a_test_submission_for_sync"
+                uploaded_keys = [ssds_key for ssds_key in src.upload(self.testdir,
+                                                                     submission_id,
+                                                                     submission_name,
+                                                                     threads=4)]
                 synced_keys = [key[len(f"{src.prefix}/"):] for key in ssds.sync(submission_id, src, dst)]
                 dst_listed_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
                 self.assertEqual(sorted(uploaded_keys), sorted(synced_keys))
@@ -178,34 +180,6 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                 with self.subTest("test no resync"):
                     synced_keys = [key for key in ssds.sync(submission_id, src, dst) if key]
                     self.assertEqual(synced_keys, list())
-
-    def _prepare_local_submission_dir(self, dirname: str, single_file=False) -> str:
-        root = os.path.join(dirname, "test_submission")
-        os.mkdir(root)
-        if single_file:
-            with open(os.path.join(root, "file.dat"), "wb") as fh:
-                fh.write(self.test_data.oneshot)
-        else:
-            subdir1 = os.path.join(root, "subdir1")
-            subdir2 = os.path.join(root, "subdir2")
-            subsubdir = os.path.join(subdir1, "subsubdir")
-            os.mkdir(subdir1)
-            os.mkdir(subdir2)
-            os.mkdir(subsubdir)
-            for i in range(2):
-                with open(os.path.join(root, f"zero_byte_file{i}.dat"), "wb") as fh:
-                    fh.write(b"")
-                with open(os.path.join(root, f"file{i}.dat"), "wb") as fh:
-                    fh.write(self.test_data.oneshot)
-                with open(os.path.join(subdir1, f"file{i}.dat"), "wb") as fh:
-                    fh.write(self.test_data.oneshot)
-                with open(os.path.join(subdir2, f"file{i}.dat"), "wb") as fh:
-                    fh.write(self.test_data.oneshot)
-                with open(os.path.join(subsubdir, f"file{i}.dat"), "wb") as fh:
-                    fh.write(self.test_data.oneshot)
-            with open(os.path.join(root, "large.dat"), "wb") as fh:
-                fh.write(self.test_data.multipart)
-        return root
 
 if __name__ == '__main__':
     unittest.main()
