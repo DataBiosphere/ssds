@@ -24,6 +24,12 @@ class BlobStore:
         raise NotImplementedError()
 
 class Blob:
+    key: str
+
+    @property
+    def url(self) -> str:
+        raise NotImplementedError()
+
     def put_tags(self, tags: Dict[str, str]):
         raise NotImplementedError()
 
