@@ -47,6 +47,10 @@ class S3Blob(Blob):
         self._s3_bucket = aws.resource("s3").Bucket(self.bucket_name)
         self.key = key
 
+    @property
+    def url(self) -> str:
+        return f"{S3BlobStore.schema}{self.bucket_name}/{self.key}"
+
     @catch_blob_not_found
     def put_tags(self, tags: Dict[str, str]):
         aws_tags = [dict(Key=k, Value=v)

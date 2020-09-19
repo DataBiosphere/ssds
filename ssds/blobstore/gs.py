@@ -51,6 +51,10 @@ class GSBlob(Blob):
         self.billing_project = _resolve_billing_project(billing_project)
         self._gs_bucket = _get_native_bucket(bucket_name, billing_project)
 
+    @property
+    def url(self) -> str:
+        return f"{GSBlobStore.schema}{self.bucket_name}/{self.key}"
+
     def _get_native_blob(self) -> GSNativeBlob:
         return _get_native_blob(self._gs_bucket, self.key)
 

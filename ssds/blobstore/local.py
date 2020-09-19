@@ -36,6 +36,10 @@ class LocalBlob(Blob):
         self.key = relpath
         self._path = os.path.join(basepath, relpath)
 
+    @property
+    def url(self) -> str:
+        return self._path
+
     @catch_blob_not_found
     def get(self) -> bytes:
         with open(self._path, "rb") as fh:
