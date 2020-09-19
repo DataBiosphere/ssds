@@ -15,7 +15,7 @@ import ssds
 import ssds.blobstore
 from ssds.blobstore.local import LocalBlob, LocalBlobStore
 from ssds.deployment import _S3StagingTest, _GSStagingTest
-from tests import infra, TestData
+from tests import infra
 from tests.fixtures.populate import populate_fixtures
 
 
@@ -26,22 +26,24 @@ S3_SSDS = _S3StagingTest()
 GS_SSDS = _GSStagingTest()
 
 class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
-    test_data = TestData(1, 1)  # appease mypy
-
     @classmethod
     def setUpClass(cls):
         cls._old_aws_min_chunk_size = ssds.blobstore.AWS_MIN_CHUNK_SIZE
         ssds.blobstore.AWS_MIN_CHUNK_SIZE = 1024 * 1024 * 5
-        oneshot_size = 7
-        multpart_size = 2 * ssds.blobstore.AWS_MIN_CHUNK_SIZE + 1
-        cls.test_data = TestData(oneshot_size, multpart_size)
 
         cls.tempdir = tempfile.TemporaryDirectory()
         cls.testdir = cls.tempdir.name
+        cls.oneshot_data = os.urandom(7)
+        cls.multipart_data = os.urandom(2 * ssds.blobstore.AWS_MIN_CHUNK_SIZE + 1)
         cls.submission_tree, cls.multifile_pfx = populate_fixtures(cls.testdir,
-                                                                   cls.test_data.oneshot,
-                                                                   cls.test_data.multipart)
+                                                                   cls.oneshot_data,
+                                                                   cls.multipart_data)
         cls.singlefile_testdir = os.path.join(cls.testdir, "singelfile")
+        for data_style, filepath, remote_key in cls.submission_tree:
+            if "ONESHOT" == data_style:
+                cls.oneshot_key = remote_key
+            if "MULTIPART" == data_style:
+                cls.multipart_key = remote_key
 
     @classmethod
     def tearDownClass(cls):
@@ -101,7 +103,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_copy_local_to_cloud(self):
         submission_id = f"{uuid4()}"
         submission_name = "this_is_a_test_submission"
-        expected_oneshot_data, expected_multipart_data = self.test_data.oneshot, self.test_data.multipart
+        expected_oneshot_data, expected_multipart_data = self.oneshot_data, self.multipart_data
         tests = [
             ("local to aws", S3_SSDS, f"{uuid4()}", expected_oneshot_data, None),
             ("local to aws", S3_SSDS, f"{uuid4()}", expected_multipart_data, None),
@@ -129,23 +131,22 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_copy_cloud_to_cloud(self):
         submission_id = f"{uuid4()}"
         submission_name = "this_is_a_test_submission"
-        oneshot, multipart = self.test_data.uploaded([S3_SSDS.blobstore, GS_SSDS.blobstore])
         tests = [
-            ("gcp to gcp", GS_SSDS, GS_SSDS, oneshot['key'], oneshot['data'], None),
-            ("gcp to gcp", GS_SSDS, GS_SSDS, multipart['key'], multipart['data'], 4),
+            ("gcp to gcp", "gs://", self.oneshot_key, GS_SSDS, self.oneshot_data, None),
+            ("gcp to gcp", "gs://", self.multipart_key, GS_SSDS, self.multipart_data, 4),
 
-            ("aws to aws", S3_SSDS, S3_SSDS, oneshot['key'], oneshot['data'], None),
-            ("aws to aws", S3_SSDS, S3_SSDS, multipart['key'], multipart['data'], 4),
+            ("aws to aws", "s3://", self.oneshot_key, S3_SSDS, self.oneshot_data, None),
+            ("aws to aws", "s3://", self.multipart_key, S3_SSDS, self.multipart_data, 4),
 
-            ("aws to gcp", S3_SSDS, GS_SSDS, oneshot['key'], oneshot['data'], None),
-            ("aws to gcp", S3_SSDS, GS_SSDS, multipart['key'], multipart['data'], 4),
+            ("aws to gcp", "s3://", self.oneshot_key, GS_SSDS, self.oneshot_data, None),
+            ("aws to gcp", "s3://", self.multipart_key, GS_SSDS, self.multipart_data, 4),
 
-            ("gcp to aws", GS_SSDS, S3_SSDS, oneshot['key'], oneshot['data'], None),
-            ("gcp to aws", GS_SSDS, S3_SSDS, multipart['key'], multipart['data'], 4),
+            ("gcp to aws", "gs://", self.oneshot_key, S3_SSDS, self.oneshot_data, None),
+            ("gcp to aws", "gs://", self.multipart_key, S3_SSDS, self.multipart_data, 4),
         ]
-        for test_name, src_ds, dst_ds, src_key, expected_data, threads in tests:
+        for test_name, src_schema, src_key, dst_ds, expected_data, threads in tests:
             with self.subTest(test_name, size=len(expected_data), threads=threads):
-                src_url = f"{src_ds.blobstore.schema}{src_ds.bucket}/{src_key}"
+                src_url = f"{src_schema}org-hpp-ssds-upload-test/{src_key}"
                 submission_path = f"copy_{uuid4()}/foo/bar/file.biz"
                 start_time = time.time()
                 dst_ds.copy(src_url, submission_id, submission_name, submission_path, threads)
@@ -153,8 +154,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                       time.time() - start_time)
                 expected_ssds_key = dst_ds._compose_ssds_key(submission_id, submission_name, submission_path)
                 dst_key = f"{dst_ds.prefix}/{expected_ssds_key}"
-                self.assertEqual(src_ds.blobstore.blob(src_key).size(),
-                                 dst_ds.blobstore.blob(dst_key).size())
+                self.assertEqual(len(expected_data), dst_ds.blobstore.blob(dst_key).size())
 
     def test_sync(self):
         tests = [
