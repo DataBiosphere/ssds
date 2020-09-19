@@ -21,7 +21,10 @@ class LocalBlobStore(BlobStore):
         self.bucket_name = basepath
 
     def list(self, prefix: str="") -> Generator["LocalBlob", None, None]:
-        for (dirpath, dirnames, filenames) in os.walk(os.path.join(self.bucket_name, prefix)):
+        root = os.path.join(self.bucket_name, prefix)
+        if root.endswith(os.path.sep):
+            root = root[:-len(os.path.sep)]
+        for (dirpath, dirnames, filenames) in os.walk(root):
             for filename in filenames:
                 relpath = os.path.relpath(os.path.join(dirpath, filename), self.bucket_name)
                 yield LocalBlob(self.bucket_name, relpath)
