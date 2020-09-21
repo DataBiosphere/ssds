@@ -70,7 +70,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                     pass
                 print(test_name, "took", time.time() - start_time, "seconds")
                 for blob in src_blobstore(src_bucket).list(src_pfx):
-                    subdir = blob.key.replace(src_pfx, "")
+                    subdir = blob.key.replace(src_pfx, "", 1)
                     if subdir.startswith("/"):
                         subdir = subdir[1:]
                     expected_ssds_key = f"{submission_id}{dst_ds._name_delimeter}{submission_name}/{subdir}"

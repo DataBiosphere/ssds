@@ -150,7 +150,7 @@ class SSDS:
                 if oneshot_uploads is not None:
                     for ssds_key in oneshot_uploads.consume_finished():
                         yield ssds_key
-                ssds_key = self._compose_ssds_key(submission_id, name, blob.key.replace(pfx, ""))
+                ssds_key = self._compose_ssds_key(submission_id, name, blob.key.replace(pfx, "", 1))
                 size = blob.size()
                 part_size = get_s3_multipart_chunk_size(size)
                 if part_size >= size:
@@ -165,12 +165,7 @@ class SSDS:
                     yield ssds_key
 
     def _compose_ssds_key(self, submission_id: str, submission_name: str, path: str) -> str:
-        if path.startswith("/"):
-            path = path[1:]
-        if path.endswith("/"):
-            path = path[1:]
-        assert not path.startswith("/")
-        assert not path.endswith("/")
+        path = path.strip("/")
         dst_prefix = f"{submission_id}{self._name_delimeter}{submission_name}"
         ssds_key = f"{dst_prefix}/{path}"
         blobstore_key = f"{self.prefix}{ssds_key}"
