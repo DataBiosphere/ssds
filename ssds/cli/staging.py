@@ -31,8 +31,7 @@ def upload(args: argparse.Namespace):
     Existing files in the submission will be overwritten.
     """
     ssds = Staging[args.deployment].ssds
-    root = os.path.abspath(os.path.normpath(args.path))
-    for ssds_key in ssds.upload(root, args.submission_id, args.name, threads=3):
+    for ssds_key in ssds.upload(args.path, args.submission_id, args.name, threads=3):
         print(ssds.compose_blobstore_url(ssds_key))
 
 @staging_cli.command("copy", arguments={

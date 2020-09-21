@@ -3,7 +3,7 @@ import sys
 import logging
 import contextlib
 from concurrent.futures import ThreadPoolExecutor
-from typing import Tuple, Dict, Union, Optional, Generator, Type
+from typing import Tuple, Dict, Union, Optional, Iterable, Generator, Type
 
 from gs_chunked_io.async_collections import AsyncSet
 
@@ -74,17 +74,26 @@ class SSDS:
         return name
 
     def upload(self,
-               root: str,
+               src_url: str,
                submission_id: str,
                name: Optional[str]=None,
                threads: Optional[int]=None) -> Generator[str, None, None]:
         """
-        Upload files from root directory and yield ssds_key for each file.
+        Upload files from src_url directory and yield ssds_key for each file.
         This returns a generator that must be iterated for uploads to occur.
         """
+        listing: Union[Generator[S3Blob, None, None], Generator[GSBlob, None, None], Generator[LocalBlob, None, None]]
         name = self._check_name_exists(submission_id, name)
-        root = os.path.realpath(os.path.normpath(root))
-        for ssds_key in self._upload_local_tree(root, submission_id, name, threads):
+        if src_url.startswith("s3://"):
+            bucket_name, pfx = src_url[5:].split("/", 1)
+            listing = S3BlobStore(bucket_name).list(pfx)
+        elif src_url.startswith("gs://"):
+            bucket_name, pfx = src_url[5:].split("/", 1)
+            listing = GSBlobStore(bucket_name).list(pfx)
+        else:
+            pfx = ""
+            listing = LocalBlobStore(os.path.realpath(os.path.normpath(src_url))).list()
+        for ssds_key in self._upload_tree(listing, pfx, submission_id, name, threads):
             yield ssds_key
 
     def copy(self, src_url: str, submission_id: str, name: str, submission_path: str, threads: Optional[int]=None):
@@ -93,21 +102,22 @@ class SSDS:
         """
         src_blob: Union[S3Blob, GSBlob, LocalBlob]
         name = self._check_name_exists(submission_id, name)
+        blob: Union[S3Blob, GSBlob, LocalBlob]
         if src_url.startswith("s3://"):
             bucket_name, key = src_url[5:].split("/", 1)
-            src_blob = S3Blob(bucket_name, key)
+            blob = S3Blob(bucket_name, key)
         elif src_url.startswith("gs://"):
             bucket_name, key = src_url[5:].split("/", 1)
-            src_blob = GSBlob(bucket_name, key)
+            blob = GSBlob(bucket_name, key)
         else:
-            src_blob = LocalBlob("/", os.path.realpath(os.path.normpath(src_url)))
-        size = src_blob.size()
+            blob = LocalBlob("/", src_url)
+        size = blob.size()
         ssds_key = self._compose_ssds_key(submission_id, name, submission_path)
         part_size = get_s3_multipart_chunk_size(size)
         if part_size >= size:
-            self._upload_oneshot(src_blob, ssds_key)
+            self._upload_oneshot(blob, ssds_key)
         else:
-            self._upload_multipart(src_blob, ssds_key, part_size, threads)
+            self._upload_multipart(blob, ssds_key, part_size, threads)
 
     def _check_name_exists(self, submission_id: str, name: Optional[str]) -> str:
         existing_name = self.get_submission_name(submission_id)
@@ -119,11 +129,12 @@ class SSDS:
             raise ValueError("Cannot update name of existing submission")
         return name
 
-    def _upload_local_tree(self,
-                           root: str,
-                           submission_id: str,
-                           name: str,
-                           threads: Optional[int]=None) -> Generator[str, None, None]:
+    def _upload_tree(self,
+                     listing: Iterable[Blob],
+                     pfx: str,
+                     submission_id: str,
+                     name: str,
+                     threads: Optional[int]=None) -> Generator[str, None, None]:
         assert " " not in name  # TODO: create regex to enforce name format?
         assert self._name_delimeter not in name  # TODO: create regex to enforce name format?
 
@@ -135,11 +146,11 @@ class SSDS:
             oneshot_uploads = AsyncSet(e, concurrency=threads)
 
         with e:
-            for blob in LocalBlobStore(root).list():
+            for blob in listing:
                 if oneshot_uploads is not None:
                     for ssds_key in oneshot_uploads.consume_finished():
                         yield ssds_key
-                ssds_key = self._compose_ssds_key(submission_id, name, blob.key)
+                ssds_key = self._compose_ssds_key(submission_id, name, blob.key.replace(pfx, "", 1))
                 size = blob.size()
                 part_size = get_s3_multipart_chunk_size(size)
                 if part_size >= size:
@@ -154,6 +165,7 @@ class SSDS:
                     yield ssds_key
 
     def _compose_ssds_key(self, submission_id: str, submission_name: str, path: str) -> str:
+        path = path.strip("/")
         dst_prefix = f"{submission_id}{self._name_delimeter}{submission_name}"
         ssds_key = f"{dst_prefix}/{path}"
         blobstore_key = f"{self.prefix}{ssds_key}"
