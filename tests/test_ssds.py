@@ -52,7 +52,6 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
         ssds.blobstore.AWS_MIN_CHUNK_SIZE = cls._old_aws_min_chunk_size
 
     def test_upload(self):
-        threads = 2
         submission_name = "this_is_a_test_submission"
         tests = [
             ("local to aws", LocalBlobStore, self.testdir, "", S3_SSDS, f"{uuid4()}"),
@@ -64,9 +63,9 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
         ]
         for test_name, src_blobstore, src_bucket, src_pfx, dst_ds, submission_id in tests:
             src_url = f"{src_blobstore.schema}{src_bucket}/{src_pfx}"
-            with self.subTest(test_name, threads=threads):
+            with self.subTest(test_name):
                 start_time = time.time()
-                for ssds_key in dst_ds.upload(src_url, submission_id, submission_name, threads):
+                for ssds_key in dst_ds.upload(src_url, submission_id, submission_name):
                     pass
                 print(test_name, "took", time.time() - start_time, "seconds")
                 for blob in src_blobstore(src_bucket).list(src_pfx):
@@ -116,22 +115,20 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
         submission_name = "this_is_a_test_submission"
         expected_oneshot_data, expected_multipart_data = self.oneshot_data, self.multipart_data
         tests = [
-            ("local to aws", S3_SSDS, f"{uuid4()}", expected_oneshot_data, None),
-            ("local to aws", S3_SSDS, f"{uuid4()}", expected_multipart_data, None),
-            ("local to aws", S3_SSDS, f"{uuid4()}", expected_multipart_data, 2),
-            ("local to gcp", GS_SSDS, f"{uuid4()}", expected_oneshot_data, None),
-            ("local to gcp", GS_SSDS, f"{uuid4()}", expected_multipart_data, None),
-            ("local to gcp", GS_SSDS, f"{uuid4()}", expected_multipart_data, 2),
+            ("local to aws", S3_SSDS, f"{uuid4()}", expected_oneshot_data),
+            ("local to aws", S3_SSDS, f"{uuid4()}", expected_multipart_data),
+            ("local to gcp", GS_SSDS, f"{uuid4()}", expected_oneshot_data),
+            ("local to gcp", GS_SSDS, f"{uuid4()}", expected_multipart_data),
         ]
-        for test_name, ds, submission_id, expected_data, threads in tests:
-            with self.subTest(test_name, size=len(expected_data), threads=threads):
+        for test_name, ds, submission_id, expected_data in tests:
+            with self.subTest(test_name, size=len(expected_data)):
                 submission_path = f"copy_{uuid4()}/fubar/snafu/file.biz"
                 with tempfile.NamedTemporaryFile() as tf:
                     with open(tf.name, "wb") as fh:
                         fh.write(expected_data)
                     start_time = time.time()
-                    ds.copy(tf.name, submission_id, submission_name, submission_path, threads)
-                    print(f"{test_name} {len(expected_data)} bytes, threads={threads} upload duration:",
+                    ds.copy(tf.name, submission_id, submission_name, submission_path)
+                    print(f"{test_name} {len(expected_data)} bytes, upload duration:",
                           time.time() - start_time)
                     expected_ssds_key = ds._compose_ssds_key(submission_id,
                                                              submission_name,
@@ -143,25 +140,25 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
         submission_id = f"{uuid4()}"
         submission_name = "this_is_a_test_submission"
         tests = [
-            ("gcp to gcp", "gs://", self.oneshot_key, GS_SSDS, self.oneshot_data, None),
-            ("gcp to gcp", "gs://", self.multipart_key, GS_SSDS, self.multipart_data, 4),
+            ("gcp to gcp", "gs://", self.oneshot_key, GS_SSDS, self.oneshot_data),
+            ("gcp to gcp", "gs://", self.multipart_key, GS_SSDS, self.multipart_data),
 
-            ("aws to aws", "s3://", self.oneshot_key, S3_SSDS, self.oneshot_data, None),
-            ("aws to aws", "s3://", self.multipart_key, S3_SSDS, self.multipart_data, 4),
+            ("aws to aws", "s3://", self.oneshot_key, S3_SSDS, self.oneshot_data),
+            ("aws to aws", "s3://", self.multipart_key, S3_SSDS, self.multipart_data),
 
-            ("aws to gcp", "s3://", self.oneshot_key, GS_SSDS, self.oneshot_data, None),
-            ("aws to gcp", "s3://", self.multipart_key, GS_SSDS, self.multipart_data, 4),
+            ("aws to gcp", "s3://", self.oneshot_key, GS_SSDS, self.oneshot_data),
+            ("aws to gcp", "s3://", self.multipart_key, GS_SSDS, self.multipart_data),
 
-            ("gcp to aws", "gs://", self.oneshot_key, S3_SSDS, self.oneshot_data, None),
-            ("gcp to aws", "gs://", self.multipart_key, S3_SSDS, self.multipart_data, 4),
+            ("gcp to aws", "gs://", self.oneshot_key, S3_SSDS, self.oneshot_data),
+            ("gcp to aws", "gs://", self.multipart_key, S3_SSDS, self.multipart_data),
         ]
-        for test_name, src_schema, src_key, dst_ds, expected_data, threads in tests:
-            with self.subTest(test_name, size=len(expected_data), threads=threads):
+        for test_name, src_schema, src_key, dst_ds, expected_data in tests:
+            with self.subTest(test_name, size=len(expected_data)):
                 src_url = f"{src_schema}org-hpp-ssds-upload-test/{src_key}"
                 submission_path = f"copy_{uuid4()}/foo/bar/file.biz"
                 start_time = time.time()
-                dst_ds.copy(src_url, submission_id, submission_name, submission_path, threads)
-                print(f"{test_name} {len(expected_data)} bytes, threads={threads} upload duration:",
+                dst_ds.copy(src_url, submission_id, submission_name, submission_path)
+                print(f"{test_name} {len(expected_data)} bytes, upload duration:",
                       time.time() - start_time)
                 expected_ssds_key = dst_ds._compose_ssds_key(submission_id, submission_name, submission_path)
                 dst_key = f"{dst_ds.prefix}/{expected_ssds_key}"
@@ -178,8 +175,7 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                 submission_name = "this_is_a_test_submission_for_sync"
                 uploaded_keys = [ssds_key for ssds_key in src.upload(self.testdir,
                                                                      submission_id,
-                                                                     submission_name,
-                                                                     threads=4)]
+                                                                     submission_name)]
                 synced_keys = [key[len(f"{src.prefix}/"):] for key in ssds.sync(submission_id, src, dst)]
                 dst_listed_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
                 self.assertEqual(sorted(uploaded_keys), sorted(synced_keys))

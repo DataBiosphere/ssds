@@ -51,16 +51,16 @@ class Blob:
     def cloud_native_checksum(self) -> str:
         raise NotImplementedError()
 
-    def parts(self, threads: Optional[int]=None) -> "AsyncPartIterator":
+    def parts(self) -> "AsyncPartIterator":
         raise NotImplementedError()
 
-    def multipart_writer(self, threads: Optional[int]=None) -> "MultipartWriter":
+    def multipart_writer(self) -> "MultipartWriter":
         raise NotImplementedError()
 
 Part = namedtuple("Part", "number data")
 
 class AsyncPartIterator:
-    def __init__(self, bucket_name, key, threads: Optional[int]=None):
+    def __init__(self, bucket_name, key):
         self.size = 0
         self.chunk_size = 0
         self._number_of_parts = 0
