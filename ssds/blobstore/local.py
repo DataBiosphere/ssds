@@ -59,7 +59,10 @@ class LocalBlob(Blob):
         Intra-cloud copy
         """
         assert isinstance(src_blob, type(self))
-        shutil.copyfile(src_blob._path, self._path)
+        if self.url == src_blob.url:
+            return
+        else:
+            shutil.copyfile(src_blob._path, self._path)
 
     @catch_blob_not_found
     def size(self) -> int:
