@@ -7,6 +7,7 @@ from typing import Dict, Optional, Union, Generator
 
 import gs_chunked_io as gscio
 from google.cloud.storage import Client, Blob as GSNativeBlob, Bucket as GSNativeBucket
+from google.api_core import exceptions as gcp_exceptions
 
 from ssds.blobstore import (BlobStore, Blob, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size,
                             BlobNotFoundError, BlobStoreUnknownError)
@@ -92,7 +93,10 @@ class GSBlob(Blob):
             src_gs_blob = src_blob._gs_bucket.blob(src_blob.key)
             token: Optional[str] = None
             while True:
-                resp = dst_gs_blob.rewrite(src_gs_blob, token)
+                try:
+                    resp = dst_gs_blob.rewrite(src_gs_blob, token)
+                except gcp_exceptions.NotFound:
+                    raise BlobNotFoundError(f"Could not find {src_blob.url}")
                 if resp[0] is None:
                     break
                 else:
