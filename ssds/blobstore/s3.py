@@ -84,7 +84,8 @@ class S3Blob(Blob):
             size = src_blob.size()
             part_size = get_s3_multipart_chunk_size(size)
             if part_size >= size:
-                self._s3_bucket.Object(self.key).copy_from(CopySource=dict(Bucket=src_blob.bucket_name, Key=src_blob.key))
+                self._s3_bucket.Object(self.key).copy_from(CopySource=dict(Bucket=src_blob.bucket_name,
+                                                                           Key=src_blob.key))
             else:
                 number_of_parts = ceil(size / part_size)
                 with self.multipart_writer() as writer:
