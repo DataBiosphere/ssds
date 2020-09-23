@@ -107,6 +107,9 @@ class GSBlob(Blob):
                     for part in src_blob.parts():
                         writer.put_part(part)
 
+    def download(self, path: str):
+        self._get_native_blob().download_to_filename(path)
+
     def exists(self) -> bool:
         blob = self._gs_bucket.blob(self.key)
         return blob.exists()

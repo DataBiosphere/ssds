@@ -90,6 +90,10 @@ class S3Blob(Blob):
                     for part_number in range(number_of_parts):
                         writer.put_part_copy(part_number, src_blob)
 
+    @catch_blob_not_found
+    def download(self, path: str):
+        self._s3_bucket.Object(self.key).download_file(path)
+
     def exists(self) -> bool:
         try:
             self.size()
