@@ -7,6 +7,7 @@ from typing import Dict, Optional, Union, Generator
 
 import gs_chunked_io as gscio
 from google.cloud.storage import Client, Blob as GSNativeBlob, Bucket as GSNativeBucket
+from google.api_core import exceptions as gcp_exceptions
 
 from ssds.blobstore import (BlobStore, Blob, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size,
                             BlobNotFoundError, BlobStoreUnknownError)
@@ -80,6 +81,34 @@ class GSBlob(Blob):
     def put(self, data: bytes):
         blob = self._gs_bucket.blob(self.key)
         blob.upload_from_file(io.BytesIO(data))
+
+    def copy_from_is_multipart(self, src_blob: "GSBlob") -> bool:
+        return src_blob._gs_bucket.user_project is not None
+
+    def copy_from(self, src_blob: "GSBlob"):
+        """
+        Intra-cloud copy
+        """
+        assert isinstance(src_blob, type(self))
+        if self.url != src_blob.url:
+            if not src_blob._gs_bucket.user_project:
+                # TODO: always use rewrite when it support requester pays buckets
+                dst_gs_blob = self._gs_bucket.blob(self.key)
+                src_gs_blob = src_blob._gs_bucket.blob(src_blob.key)
+                token: Optional[str] = None
+                while True:
+                    try:
+                        resp = dst_gs_blob.rewrite(src_gs_blob, token)
+                    except gcp_exceptions.NotFound:
+                        raise BlobNotFoundError(f"Could not find {src_blob.url}")
+                    if resp[0] is None:
+                        break
+                    else:
+                        token = resp[0]
+            else:
+                with self.multipart_writer() as writer:
+                    for part in src_blob.parts():
+                        writer.put_part(part)
 
     def exists(self) -> bool:
         blob = self._gs_bucket.blob(self.key)

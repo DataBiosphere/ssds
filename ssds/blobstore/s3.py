@@ -73,6 +73,27 @@ class S3Blob(Blob):
         blob = self._s3_bucket.Object(self.key)
         blob.upload_fileobj(io.BytesIO(data))
 
+    def copy_from_is_multipart(self, src_blob: "S3Blob") -> bool:
+        size = src_blob.size()
+        return size >= get_s3_multipart_chunk_size(size)
+
+    def copy_from(self, src_blob: "S3Blob"):
+        """
+        Intra-cloud copy
+        """
+        assert isinstance(src_blob, type(self))
+        if self.url != src_blob.url:
+            size = src_blob.size()
+            part_size = get_s3_multipart_chunk_size(size)
+            if part_size >= size:
+                self._s3_bucket.Object(self.key).copy_from(CopySource=dict(Bucket=src_blob.bucket_name,
+                                                                           Key=src_blob.key))
+            else:
+                number_of_parts = ceil(size / part_size)
+                with self.multipart_writer() as writer:
+                    for part_number in range(number_of_parts):
+                        writer.put_part_copy(part_number, src_blob)
+
     def exists(self) -> bool:
         try:
             self.size()
@@ -154,9 +175,31 @@ class S3MultipartWriter(MultipartWriter):
         )
         return dict(ETag=resp['ETag'], PartNumber=aws_part_number)
 
+    def _put_part_copy(self, part_number: int, src_blob: S3Blob):
+        aws_part_number = part_number + 1
+        size = src_blob.size()
+        chunk_size = get_s3_multipart_chunk_size(size)
+        start_bytes = part_number * chunk_size
+        end_bytes = start_bytes + chunk_size - 1
+        if end_bytes >= size:
+            end_bytes = size - 1
+        resp = aws.client("s3").upload_part_copy(
+            Bucket=self.bucket_name,
+            Key=self.key,
+            PartNumber=aws_part_number,
+            CopySource=dict(Bucket=src_blob.bucket_name, Key=src_blob.key),
+            CopySourceRange=f"bytes={start_bytes}-{end_bytes}",
+            UploadId=self.mpu,
+        )
+        return dict(ETag=resp['CopyPartResult']['ETag'], PartNumber=aws_part_number)
+
     def put_part(self, part: Part):
         self._collect_parts()
         self._part_uploads.put(self._put_part, part)
+
+    def put_part_copy(self, part_number: int, src_blob: S3Blob):
+        self._collect_parts()
+        self._part_uploads.put(self._put_part_copy, part_number, src_blob)
 
     def _collect_parts(self, wait=False):
         if wait:
