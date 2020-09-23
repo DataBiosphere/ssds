@@ -42,23 +42,19 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         self.assertEqual("s3://", S3BlobStore.schema)
         self.assertEqual("gs://", GSBlobStore.schema)
 
-    def test_get(self):
+    def test_put_get(self):
+        key = f"{uuid4()}"
         expected_data = test_data.oneshot
         tests = [("aws", self._put_s3_obj, s3_test_bucket, s3_blobstore),
                  ("gcp", self._put_gs_obj, gs_test_bucket, gs_blobstore),
                  ("local", self._put_local_obj, local_test_bucket, local_blobstore)]
         for test_name, upload, bucket_name, bs in tests:
             with self.subTest(test_name):
-                key = upload(bucket_name, expected_data)
+                bs.blob(key).put(expected_data)
                 data = bs.blob(key).get()
                 self.assertEqual(data, expected_data)
                 with self.assertRaises(BlobNotFoundError):
                     bs.blob(f"{uuid4()}").get()
-
-    def _test_put(self):
-        """
-        This is implicitly tested during `TestSSDS`.
-        """
 
     def test_size(self):
         expected_size = randint(1, 10)
