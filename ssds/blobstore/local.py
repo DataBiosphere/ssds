@@ -63,6 +63,11 @@ class LocalBlob(Blob):
             shutil.copyfile(src_blob._path, self._path)
 
     @catch_blob_not_found
+    def download(self, path: str):
+        if self.url != path:
+            shutil.copyfile(self._path, path)
+
+    @catch_blob_not_found
     def size(self) -> int:
         return os.path.getsize(self._path)
 

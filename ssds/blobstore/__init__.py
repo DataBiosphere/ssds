@@ -45,6 +45,9 @@ class Blob:
     def copy_from(self, src_blob: Any):
         raise NotImplementedError()
 
+    def download(self, path: str):
+        raise NotImplementedError()
+
     def exists(self) -> bool:
         raise NotImplementedError()
 
