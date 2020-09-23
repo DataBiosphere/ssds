@@ -83,7 +83,7 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
             with self.subTest("blob not found", blobstore=bs):
                 with self.assertRaises(BlobNotFoundError):
                     bs.blob(f"{uuid4()}").download(dst_path)
-                    
+
     def test_size(self):
         expected_size = randint(1, 10)
         data = os.urandom(expected_size)
