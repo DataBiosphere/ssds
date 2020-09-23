@@ -101,15 +101,7 @@ class SSDS:
         """
         src_blob: Union[S3Blob, GSBlob, LocalBlob]
         name = self._check_name_exists(submission_id, name)
-        blob: Union[S3Blob, GSBlob, LocalBlob]
-        if src_url.startswith("s3://"):
-            bucket_name, key = src_url[5:].split("/", 1)
-            blob = S3Blob(bucket_name, key)
-        elif src_url.startswith("gs://"):
-            bucket_name, key = src_url[5:].split("/", 1)
-            blob = GSBlob(bucket_name, key)
-        else:
-            blob = LocalBlob("/", src_url)
+        blob = blob_for_url(src_url)
         size = blob.size()
         ssds_key = self._compose_ssds_key(submission_id, name, submission_path)
         part_size = get_s3_multipart_chunk_size(size)
@@ -269,3 +261,16 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
     for synced_key in oneshot_uploads.consume():
         if synced_key is not None:
             yield synced_key
+
+def blob_for_url(url: str) -> Union[LocalBlob, S3Blob, GSBlob]:
+    assert url
+    blob: Union[S3Blob, GSBlob, LocalBlob]
+    if url.startswith("s3://"):
+        bucket_name, key = url[5:].split("/", 1)
+        blob = S3Blob(bucket_name, key)
+    elif url.startswith("gs://"):
+        bucket_name, key = url[5:].split("/", 1)
+        blob = GSBlob(bucket_name, key)
+    else:
+        blob = LocalBlob("/", url)
+    return blob
