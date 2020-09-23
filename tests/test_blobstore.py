@@ -35,8 +35,6 @@ local_test_tempdir = tempfile.TemporaryDirectory()
 local_test_bucket = local_test_tempdir.name
 local_blobstore = LocalBlobStore(local_test_tempdir.name)
 
-local_blobstore = LocalBlobStore(tempfile.TemporaryDirectory().name)
-
 test_data = TestData()
 
 class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
