@@ -48,6 +48,10 @@ class LocalBlob(Blob):
         with open(self._path, "rb") as fh:
             return fh.read()
 
+    def put(self, data: bytes):
+        with open(self._path, "wb") as fh:
+            fh.write(data)
+
     @catch_blob_not_found
     def size(self) -> int:
         return os.path.getsize(self._path)
