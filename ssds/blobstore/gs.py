@@ -10,6 +10,7 @@ from google.cloud.storage import Client, Blob as GSNativeBlob, Bucket as GSNativ
 
 from ssds.blobstore import (BlobStore, Blob, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size,
                             BlobNotFoundError, BlobStoreUnknownError)
+from ssds.concurrency import async_queue, async_set
 
 
 class GSBlobStore(BlobStore):
@@ -90,19 +91,18 @@ class GSBlob(Blob):
     def cloud_native_checksum(self) -> str:
         return self._get_native_blob().crc32c
 
-    def parts(self, threads: Optional[int]=None) -> "GSAsyncPartIterator":
-        return GSAsyncPartIterator(self.bucket_name, self.key, threads, self.billing_project)
+    def parts(self) -> "GSAsyncPartIterator":
+        return GSAsyncPartIterator(self.bucket_name, self.key, self.billing_project)
 
-    def multipart_writer(self, threads: Optional[int]=None) -> "MultipartWriter":
-        return GSMultipartWriter(self.bucket_name, self.key, threads, billing_project=self.billing_project)
+    def multipart_writer(self) -> "MultipartWriter":
+        return GSMultipartWriter(self.bucket_name, self.key, billing_project=self.billing_project)
 
 class GSAsyncPartIterator(AsyncPartIterator):
-    def __init__(self, bucket_name: str, key: str, threads: Optional[int]=None, billing_project: Optional[str]=None):
+    def __init__(self, bucket_name: str, key: str, billing_project: Optional[str]=None):
         self._blob = _get_native_blob(bucket_name, key, billing_project)
         self.size = self._blob.size
         self.chunk_size = get_s3_multipart_chunk_size(self.size)
         self._number_of_parts = ceil(self.size / self.chunk_size) if 0 < self.size else 1
-        self._threads = threads
 
     def __iter__(self) -> Generator[Part, None, None]:
         if 1 == self._number_of_parts:
@@ -112,26 +112,18 @@ class GSAsyncPartIterator(AsyncPartIterator):
             yield Part(0, data.getvalue())
         else:
             for chunk_number, data in gscio.for_each_chunk_async(self._blob,
-                                                                 self.chunk_size,
-                                                                 threads=self._threads):
+                                                                 async_set(),
+                                                                 self.chunk_size):
                 yield Part(chunk_number, data)
 
-class _MonkeyPatchedPartUploader(gscio.Writer):
-    def put_part(self, part_number: int, data: bytes):
-        super()._put_part(part_number, data)
-
 class GSMultipartWriter(MultipartWriter):
-    def __init__(self, bucket_name: str, key: str, threads: Optional[int]=None, billing_project: Optional[str]=None):
+    def __init__(self, bucket_name: str, key: str, billing_project: Optional[str]=None):
         super().__init__()
         kwargs = dict()
         if billing_project is not None:
             kwargs['user_project'] = billing_project
         bucket = _client().bucket(bucket_name, **kwargs)
-        if threads is None:
-            self._part_uploader: Union[gscio.AsyncPartUploader, _MonkeyPatchedPartUploader] = \
-                _MonkeyPatchedPartUploader(key, bucket, threads)
-        else:
-            self._part_uploader = gscio.AsyncPartUploader(key, bucket, threads=threads)
+        self._part_uploader = gscio.AsyncPartUploader(key, bucket, async_set())
 
     def put_part(self, part: Part):
         self._part_uploader.put_part(part.number, part.data)

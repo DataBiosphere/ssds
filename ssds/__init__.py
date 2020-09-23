@@ -2,7 +2,6 @@ import os
 import sys
 import logging
 import contextlib
-from concurrent.futures import ThreadPoolExecutor
 from typing import Tuple, Dict, Union, Optional, Iterable, Generator, Type
 
 from gs_chunked_io.async_collections import AsyncSet
@@ -12,6 +11,7 @@ from ssds.blobstore import Blob, BlobStore, get_s3_multipart_chunk_size, Part
 from ssds.blobstore.s3 import S3Blob, S3BlobStore
 from ssds.blobstore.gs import GSBlob, GSBlobStore
 from ssds.blobstore.local import LocalBlob, LocalBlobStore
+from ssds.concurrency import async_set, async_queue
 
 
 logger = logging.getLogger(__name__)
@@ -76,8 +76,7 @@ class SSDS:
     def upload(self,
                src_url: str,
                submission_id: str,
-               name: Optional[str]=None,
-               threads: Optional[int]=None) -> Generator[str, None, None]:
+               name: Optional[str]=None):
         """
         Upload files from src_url directory and yield ssds_key for each file.
         This returns a generator that must be iterated for uploads to occur.
@@ -93,10 +92,10 @@ class SSDS:
         else:
             pfx = ""
             listing = LocalBlobStore(os.path.realpath(os.path.normpath(src_url))).list()
-        for ssds_key in self._upload_tree(listing, pfx, submission_id, name, threads):
+        for ssds_key in self._upload_tree(listing, pfx, submission_id, name):
             yield ssds_key
 
-    def copy(self, src_url: str, submission_id: str, name: str, submission_path: str, threads: Optional[int]=None):
+    def copy(self, src_url: str, submission_id: str, name: str, submission_path: str):
         """
         Copy files from local or cloud locations into the ssds.
         """
@@ -117,7 +116,7 @@ class SSDS:
         if part_size >= size:
             self._upload_oneshot(blob, ssds_key)
         else:
-            self._upload_multipart(blob, ssds_key, part_size, threads)
+            self._upload_multipart(blob, ssds_key, part_size)
 
     def _check_name_exists(self, submission_id: str, name: Optional[str]) -> str:
         existing_name = self.get_submission_name(submission_id)
@@ -133,36 +132,28 @@ class SSDS:
                      listing: Iterable[Blob],
                      pfx: str,
                      submission_id: str,
-                     name: str,
-                     threads: Optional[int]=None) -> Generator[str, None, None]:
+                     name: str) -> Generator[str, None, None]:
         assert " " not in name  # TODO: create regex to enforce name format?
         assert self._name_delimeter not in name  # TODO: create regex to enforce name format?
 
-        if threads is None:
-            e: Union[contextlib.AbstractContextManager, ThreadPoolExecutor] = contextlib.nullcontext()
-            oneshot_uploads: Optional[AsyncSet] = None
-        else:
-            e = ThreadPoolExecutor(max_workers=threads)
-            oneshot_uploads = AsyncSet(e, concurrency=threads)
-
-        with e:
-            for blob in listing:
-                if oneshot_uploads is not None:
-                    for ssds_key in oneshot_uploads.consume_finished():
-                        yield ssds_key
-                ssds_key = self._compose_ssds_key(submission_id, name, blob.key.replace(pfx, "", 1))
-                size = blob.size()
-                part_size = get_s3_multipart_chunk_size(size)
-                if part_size >= size:
-                    if oneshot_uploads is not None:
-                        oneshot_uploads.put(self._upload_oneshot, blob, ssds_key)
-                    else:
-                        yield self._upload_oneshot(blob, ssds_key)
-                else:
-                    yield self._upload_multipart(blob, ssds_key, part_size, threads)
+        oneshot_uploads = async_set()
+        for blob in listing:
             if oneshot_uploads is not None:
-                for ssds_key in oneshot_uploads.consume():
+                for ssds_key in oneshot_uploads.consume_finished():
                     yield ssds_key
+            ssds_key = self._compose_ssds_key(submission_id, name, blob.key.replace(pfx, "", 1))
+            size = blob.size()
+            part_size = get_s3_multipart_chunk_size(size)
+            if part_size >= size:
+                if oneshot_uploads is not None:
+                    oneshot_uploads.put(self._upload_oneshot, blob, ssds_key)
+                else:
+                    yield self._upload_oneshot(blob, ssds_key)
+            else:
+                yield self._upload_multipart(blob, ssds_key, part_size)
+        if oneshot_uploads is not None:
+            for ssds_key in oneshot_uploads.consume():
+                yield ssds_key
 
     def _compose_ssds_key(self, submission_id: str, submission_name: str, path: str) -> str:
         path = path.strip("/")
@@ -188,8 +179,7 @@ class SSDS:
     def _upload_multipart(self,
                           src_blob: Blob,
                           ssds_key: str,
-                          part_size: int,
-                          threads: Optional[int]) -> str:
+                          part_size: int) -> str:
         checksums: Dict[str, Union[str, checksum.UnorderedChecksum]]
         if isinstance(src_blob, S3Blob):
             checksums = dict(s3=checksum.S3EtagUnordered(), gs=checksum.GScrc32cUnordered())
@@ -200,8 +190,8 @@ class SSDS:
         else:
             raise TypeError(f"Unknown blob type {type(src_blob)}")
         key = f"{self.prefix}/{ssds_key}"
-        with self.blobstore.blob(key).multipart_writer(threads) as uploader:
-            for part in src_blob.parts(threads):
+        with self.blobstore.blob(key).multipart_writer() as uploader:
+            for part in src_blob.parts():
                 for cs in checksums.values():
                     if isinstance(cs, checksum.UnorderedChecksum):
                         cs.update(part.number, part.data)
@@ -259,26 +249,23 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
             logger.info(f"already-synced {key} from {src} to {dst}")
             return None
 
-    # TODO: pass in threads as optional parameter
-    threads = 3
-    with ThreadPoolExecutor(max_workers=threads) as e:
-        oneshot_uploads = AsyncSet(e, threads)
-        for blob in src.blobstore.list(f"{src.prefix}/{submission_id}"):
-            parts = src.blobstore.blob(blob.key).parts(threads=threads)
-            if 1 == len(parts):
-                oneshot_uploads.put(_sync_oneshot, blob.key, list(parts)[0].data)
+    oneshot_uploads = async_set()
+    for blob in src.blobstore.list(f"{src.prefix}/{submission_id}"):
+        parts = src.blobstore.blob(blob.key).parts()
+        if 1 == len(parts):
+            oneshot_uploads.put(_sync_oneshot, blob.key, list(parts)[0].data)
+        else:
+            if not _already_synced(blob.key):
+                logger.info(f"syncing {blob.key} from {src} to {dst}")
+                with dst.blobstore.blob(blob.key).multipart_writer() as writer:
+                    for part in parts:
+                        writer.put_part(part)
+                _verify_and_tag(blob.key)
+                yield blob.key
             else:
-                if not _already_synced(blob.key):
-                    logger.info(f"syncing {blob.key} from {src} to {dst}")
-                    with dst.blobstore.blob(blob.key).multipart_writer(threads=threads) as writer:
-                        for part in parts:
-                            writer.put_part(part)
-                    _verify_and_tag(blob.key)
-                    yield blob.key
-                else:
-                    logger.info(f"already-synced {blob.key} from {src} to {dst}")
-            for synced_key in oneshot_uploads.consume_finished():
-                yield synced_key
-        for synced_key in oneshot_uploads.consume():
-            if synced_key is not None:
-                yield synced_key
+                logger.info(f"already-synced {blob.key} from {src} to {dst}")
+        for synced_key in oneshot_uploads.consume_finished():
+            yield synced_key
+    for synced_key in oneshot_uploads.consume():
+        if synced_key is not None:
+            yield synced_key

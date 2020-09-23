@@ -31,7 +31,7 @@ def upload(args: argparse.Namespace):
     Existing files in the submission will be overwritten.
     """
     ssds = Staging[args.deployment].ssds
-    for ssds_key in ssds.upload(args.path, args.submission_id, args.name, threads=3):
+    for ssds_key in ssds.upload(args.path, args.submission_id, args.name):
         print(ssds.compose_blobstore_url(ssds_key))
 
 @staging_cli.command("copy", arguments={
@@ -45,7 +45,7 @@ def copy(args: argparse.Namespace):
     Copy files from the local filesystem or cloud locations into the SSDS
     """
     ssds = Staging[args.deployment].ssds
-    ssds.copy(args.src_url, args.submission_id, args.name, args.submission_path, threads=3)
+    ssds.copy(args.src_url, args.submission_id, args.name, args.submission_path)
 
 @staging_cli.command("list")
 def list(args: argparse.Namespace):

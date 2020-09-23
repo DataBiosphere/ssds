@@ -99,12 +99,12 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         for test_name, bs in tests:
             with self.subTest(test_name):
                 count = 0
-                for part_number, data in bs.blob(key).parts(threads=1):
+                for part_number, data in bs.blob(key).parts():
                     self.assertEqual(expected_parts[part_number], data)
                     count += 1
                 self.assertEqual(number_of_parts, count)
                 with self.assertRaises(BlobNotFoundError):
-                    bs.blob(f"{uuid4()}").parts(threads=1)
+                    bs.blob(f"{uuid4()}").parts()
 
     def test_tags(self):
         tags = dict(foo="bar", doom="gloom")
@@ -150,20 +150,19 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_s3_multipart_writer(self):
         expected_data = test_data.multipart
-        for threads in [None, 2]:
-            with self.subTest(threads=threads):
-                chunk_size = get_s3_multipart_chunk_size(len(expected_data))
-                number_of_chunks = ceil(len(expected_data) / chunk_size)
-                key = f"{uuid4()}"
-                start_time = time.time()
-                with S3MultipartWriter(s3_test_bucket, key, threads) as writer:
-                    for i in range(number_of_chunks):
-                        part = Part(number=i,
-                                    data=expected_data[i * chunk_size: (i + 1) * chunk_size])
-                        writer.put_part(part)
-                print(f"upload duration threads={threads}", time.time() - start_time)
-                retrieved_data = aws.resource("s3").Bucket(s3_test_bucket).Object(key).get()['Body'].read()
-                self.assertEqual(expected_data, retrieved_data)
+        with self.subTest():
+            chunk_size = get_s3_multipart_chunk_size(len(expected_data))
+            number_of_chunks = ceil(len(expected_data) / chunk_size)
+            key = f"{uuid4()}"
+            start_time = time.time()
+            with S3MultipartWriter(s3_test_bucket, key) as writer:
+                for i in range(number_of_chunks):
+                    part = Part(number=i,
+                                data=expected_data[i * chunk_size: (i + 1) * chunk_size])
+                    writer.put_part(part)
+            print("upload duration", time.time() - start_time)
+            retrieved_data = aws.resource("s3").Bucket(s3_test_bucket).Object(key).get()['Body'].read()
+            self.assertEqual(expected_data, retrieved_data)
 
 class TestS3Multipart(infra.SuppressWarningsMixin, unittest.TestCase):
     def test_get_s3_multipart_chunk_size(self):
