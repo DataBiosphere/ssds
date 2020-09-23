@@ -1,4 +1,5 @@
 import os
+import shutil
 from math import ceil
 from functools import wraps
 from typing import Generator, Optional
@@ -51,6 +52,15 @@ class LocalBlob(Blob):
     def put(self, data: bytes):
         with open(self._path, "wb") as fh:
             fh.write(data)
+
+    @catch_blob_not_found
+    def copy_from(self, src_blob: "LocalBlob"):
+        """
+        Intra-cloud copy
+        """
+        assert isinstance(src_blob, type(self))
+        if self.url != src_blob.url:
+            shutil.copyfile(src_blob._path, self._path)
 
     @catch_blob_not_found
     def size(self) -> int:

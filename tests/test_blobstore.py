@@ -56,6 +56,20 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                 with self.assertRaises(BlobNotFoundError):
                     bs.blob(f"{uuid4()}").get()
 
+    def test_copy_from(self):
+        dst_key = f"{uuid4()}"
+        oneshot, multipart = test_data.uploaded([local_blobstore, s3_blobstore, gs_blobstore])
+        for bs in (local_blobstore, s3_blobstore, gs_blobstore):
+            for src_key in (oneshot['key'], multipart['key']):
+                with self.subTest(src_key=src_key, dst_key=dst_key, blobstore=bs):
+                    src_blob = bs.blob(src_key)
+                    dst_blob = bs.blob(dst_key)
+                    dst_blob.copy_from(src_blob)
+                    self.assertEqual(src_blob.get(), dst_blob.get())
+            with self.subTest("blob not found", blobstore=bs):
+                with self.assertRaises(BlobNotFoundError):
+                    bs.blob(f"{uuid4()}").copy_from(bs.blob(f"{uuid4()}"))
+
     def test_size(self):
         expected_size = randint(1, 10)
         data = os.urandom(expected_size)

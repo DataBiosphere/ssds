@@ -1,6 +1,6 @@
 from math import ceil
 from collections import namedtuple
-from typing import Dict, Optional, Generator
+from typing import Any, Dict, Optional, Generator
 
 
 MiB = 1024 ** 2
@@ -40,6 +40,9 @@ class Blob:
         raise NotImplementedError()
 
     def put(self, data: bytes):
+        raise NotImplementedError()
+
+    def copy_from(self, src_blob: Any):
         raise NotImplementedError()
 
     def exists(self) -> bool:
