@@ -81,6 +81,27 @@ class GSBlob(Blob):
         blob = self._gs_bucket.blob(self.key)
         blob.upload_from_file(io.BytesIO(data))
 
+    def copy_from(self, src_blob: "GSBlob"):
+        """
+        Intra-cloud copy
+        """
+        assert isinstance(src_blob, type(self))
+        if not src_blob._gs_bucket.user_project:
+            # TODO: always use rewrite when it support requester pays buckets
+            dst_gs_blob = self._gs_bucket.blob(self.key)
+            src_gs_blob = src_blob._gs_bucket.blob(src_blob.key)
+            token: Optional[str] = None
+            while True:
+                resp = dst_gs_blob.rewrite(src_gs_blob, token)
+                if resp[0] is None:
+                    break
+                else:
+                    token = resp[0]
+        else:
+            with self.multipart_writer() as writer:
+                for part in src_blob.parts():
+                    writer.put_part(part)
+
     def exists(self) -> bool:
         blob = self._gs_bucket.blob(self.key)
         return blob.exists()
