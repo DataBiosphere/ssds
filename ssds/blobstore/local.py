@@ -2,7 +2,7 @@ import os
 import shutil
 from math import ceil
 from functools import wraps
-from typing import Generator, Optional
+from typing import Dict, Generator, Optional
 
 from ssds.blobstore import (BlobStore, Blob, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size,
                             BlobNotFoundError, BlobStoreUnknownError)
@@ -43,6 +43,10 @@ class LocalBlob(Blob):
     @property
     def url(self) -> str:
         return self._path
+
+    @catch_blob_not_found
+    def get_tags(self) -> Dict[str, str]:
+        return dict()
 
     @catch_blob_not_found
     def get(self) -> bytes:
