@@ -16,7 +16,7 @@ class TestStagingCLI(unittest.TestCase):
         mock_staging = MagicMock()
         mock_staging.upload = MagicMock()
         with patch("ssds.deployment.Staging.ssds", mock_staging):
-            args = Namespace(submission_id="foo", name="bar", path="asf", deployment="default")
+            args = Namespace(submission_id="foo", name="bar", path="asf", deployment="default", subdir="")
             staging_cli.upload(args)
             # TODO: Fix this test
             # expected_path = os.path.abspath(os.path.normpath(args.path))
