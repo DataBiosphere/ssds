@@ -44,7 +44,7 @@ setup(
     author="Brian Hannafious",
     author_email="bhannafi@ucsc.edu",
     license="MIT",
-    packages=find_packages(exclude=["tests"]),
+    packages=find_packages(exclude=["tests", "dev_scripts"]),
     scripts=glob.glob("scripts/*"),
     zip_safe=False,
     install_requires=install_requires,
