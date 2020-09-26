@@ -6,12 +6,19 @@ from requests.adapters import HTTPAdapter, DEFAULT_POOLSIZE
 
 from google.cloud.storage import Client
 
+from ssds.concurrency import MAX_RPC_CONCURRENCY, MAX_PASSTHROUGH_CONCURRENCY
+
 
 @lru_cache()
 def storage_client() -> Client:
     # Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
     warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
-    return Client()
+    client = Client()
+    total_concurrency = MAX_RPC_CONCURRENCY + MAX_PASSTHROUGH_CONCURRENCY
+    adapter = HTTPAdapter(pool_connections=total_concurrency, pool_maxsize=total_concurrency)
+    client._http.mount("http://", adapter)
+    client._http.mount("https://", adapter)
+    return client
 
 def resolve_billing_project(billing_project: Optional[str]=None) -> Optional[str]:
     if billing_project is not None:
