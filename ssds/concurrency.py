@@ -5,7 +5,7 @@ from gs_chunked_io.async_collections import AsyncSet, AsyncQueue
 
 
 class Executor:
-    max_workers = 3
+    max_workers = 50
     _executor: Optional[ThreadPoolExecutor] = None
 
     @classmethod
@@ -19,8 +19,8 @@ class Executor:
             cls._executor.shutdown(wait=True)
             cls._executor = None
 
-def async_set():
-    return AsyncSet(Executor.get(), Executor.max_workers)
+def async_set(concurrency: int=4):
+    return AsyncSet(Executor.get(), concurrency)
 
-def async_queue():
-    return AsyncQueue(Executor.get(), Executor.max_workers)
+def async_queue(concurrency: int=4):
+    return AsyncQueue(Executor.get(), concurrency)
