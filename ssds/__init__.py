@@ -267,8 +267,24 @@ def blob_for_url(url: str) -> Union[LocalBlob, S3Blob, GSBlob]:
         bucket_name, key = url[5:].split("/", 1)
         blob = GSBlob(bucket_name, key)
     else:
-        blob = LocalBlob("/", url)
+        blob = LocalBlob("/", os.path.realpath(os.path.normpath(url)))
     return blob
+
+def blobstore_for_url(url: str) -> Tuple[str, Union[S3BlobStore, GSBlobStore, LocalBlobStore]]:
+    """
+    url is expected to be a prefix, NOT a key
+    """
+    blobstore: Union[S3BlobStore, GSBlobStore, LocalBlobStore]
+    if url.startswith("s3://"):
+        bucket_name, pfx = url[5:].split("/", 1)
+        blobstore = S3BlobStore(bucket_name)
+    elif url.startswith("gs://"):
+        bucket_name, pfx = url[5:].split("/", 1)
+        blobstore = GSBlobStore(bucket_name)
+    else:
+        pfx = os.path.realpath(os.path.normpath(url.strip(os.path.sep)))
+        blobstore = LocalBlobStore("/")
+    return pfx, blobstore
 
 def listing_for_url(url: str) -> Tuple[str, Union[Generator[S3Blob, None, None],
                                                   Generator[GSBlob, None, None],
