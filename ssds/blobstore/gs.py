@@ -1,14 +1,12 @@
 import io
-import os
-import warnings
-from functools import lru_cache, wraps
 from math import ceil
 from typing import Dict, Optional, Union, Generator
 
 import gs_chunked_io as gscio
-from google.cloud.storage import Client, Blob as GSNativeBlob, Bucket as GSNativeBucket
+from google.cloud.storage import Blob as GSNativeBlob, Bucket as GSNativeBucket
 from google.api_core import exceptions as gcp_exceptions
 
+from ssds import gcp
 from ssds.blobstore import (BlobStore, Blob, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size,
                             BlobNotFoundError, BlobStoreUnknownError)
 from ssds.concurrency import async_queue, async_set
@@ -19,13 +17,13 @@ class GSBlobStore(BlobStore):
 
     def __init__(self, bucket_name: str, billing_project: Optional[str]=None):
         self.bucket_name = bucket_name
-        self.billing_project = _resolve_billing_project(billing_project)
+        self.billing_project = gcp.resolve_billing_project(billing_project)
 
     def list(self, prefix="") -> Generator["GSBlob", None, None]:
         kwargs = dict()
         if self.billing_project is not None:
             kwargs['user_project'] = self.billing_project
-        for blob in _client().bucket(self.bucket_name, **kwargs).list_blobs(prefix=prefix):
+        for blob in gcp.storage_client().bucket(self.bucket_name, **kwargs).list_blobs(prefix=prefix):
             yield GSBlob(self.bucket_name, blob.name, self.billing_project)
 
     def blob(self, key: str) -> "GSBlob":
@@ -36,7 +34,7 @@ def _get_native_bucket(bucket: Union[str, GSNativeBucket], billing_project: Opti
         kwargs = dict()
         if billing_project is not None:
             kwargs['user_project'] = billing_project
-        bucket = _client().bucket(bucket, **kwargs)
+        bucket = gcp.storage_client().bucket(bucket, **kwargs)
     return bucket
 
 def _get_native_blob(bucket: Union[str, GSNativeBucket], key: str, billing_project: Optional[str]=None) -> GSNativeBlob:
@@ -50,7 +48,7 @@ class GSBlob(Blob):
     def __init__(self, bucket_name: str, key: str, billing_project: Optional[str]=None):
         self.bucket_name = bucket_name
         self.key = key
-        self.billing_project = _resolve_billing_project(billing_project)
+        self.billing_project = gcp.resolve_billing_project(billing_project)
         self._gs_bucket = _get_native_bucket(bucket_name, billing_project)
 
     @property
@@ -154,7 +152,7 @@ class GSMultipartWriter(MultipartWriter):
         kwargs = dict()
         if billing_project is not None:
             kwargs['user_project'] = billing_project
-        bucket = _client().bucket(bucket_name, **kwargs)
+        bucket = gcp.storage_client().bucket(bucket_name, **kwargs)
         self._part_uploader = gscio.AsyncPartUploader(key, bucket, async_set())
 
     def put_part(self, part: Part):
@@ -162,21 +160,3 @@ class GSMultipartWriter(MultipartWriter):
 
     def close(self):
         self._part_uploader.close()
-
-@lru_cache()
-def _client() -> Client:
-    # Suppress the annoying google gcloud _CLOUD_SDK_CREDENTIALS_WARNING warnings
-    warnings.filterwarnings("ignore", "Your application has authenticated using end user credentials")
-    return Client()
-
-def _resolve_billing_project(billing_project: Optional[str]=None) -> Optional[str]:
-    if billing_project is not None:
-        return billing_project
-    elif os.environ.get('GOOGLE_PROJECT'):
-        return os.environ['GOOGLE_PROJECT']
-    elif os.environ.get('GCLOUD_PROJECT'):
-        return os.environ['GCLOUD_PROJECT']
-    elif os.environ.get('GCP_PROJECT'):
-        return os.environ['GCP_PROJECT']
-    else:
-        return None
