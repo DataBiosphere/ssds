@@ -61,22 +61,22 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             ("gcp to aws", GSBlobStore, "org-hpp-ssds-upload-test", f"{self.multifile_pfx}", S3_SSDS, f"{uuid4()}"),
             ("gcp to gcp", GSBlobStore, "org-hpp-ssds-upload-test", f"{self.multifile_pfx}", GS_SSDS, f"{uuid4()}"),
         ]
-        for test_name, src_blobstore, src_bucket, src_pfx, dst_ds, submission_id in tests:
-            src_url = f"{src_blobstore.schema}{src_bucket}/{src_pfx}"
-            with self.subTest(test_name):
-                start_time = time.time()
-                for ssds_key in dst_ds.upload(src_url, submission_id, submission_name):
-                    pass
-                print(test_name, "took", time.time() - start_time, "seconds")
-                for blob in src_blobstore(src_bucket).list(src_pfx):
-                    subdir = blob.key.replace(src_pfx, "", 1)
-                    if subdir.startswith("/"):
-                        subdir = subdir[1:]
-                    expected_ssds_key = f"{submission_id}{dst_ds._name_delimeter}{submission_name}/{subdir}"
-                    dst_key = f"{dst_ds.prefix}/{expected_ssds_key}"
-                    dst_blob = dst_ds.blobstore.blob(dst_key)
-                    print("checking", blob.url, "->", dst_blob.url)
-                    self.assertEqual(blob.size(), dst_blob.size())
+        for subdir in ("", "alsdfjlasdjf/laksfkljasd", "/asfas/", "asdfsa///"):
+            for test_name, src_blobstore, src_bucket, src_pfx, dst_ds, submission_id in tests:
+                src_url = f"{src_blobstore.schema}{src_bucket}/{src_pfx}"
+                with self.subTest(test_name, subdir=subdir):
+                    start_time = time.time()
+                    for ssds_key in dst_ds.upload(src_url, submission_id, submission_name, subdir):
+                        pass
+                    print(test_name, "took", time.time() - start_time, "seconds")
+                    for blob in src_blobstore(src_bucket).list(src_pfx):
+                        suffix = ((subdir.strip("/") + "/" if subdir else "")
+                                  + blob.key.replace(src_pfx, "", 1).strip("/"))
+                        expected_ssds_key = f"{submission_id}{dst_ds._name_delimeter}{submission_name}/{suffix}"
+                        dst_key = f"{dst_ds.prefix}/{expected_ssds_key}"
+                        dst_blob = dst_ds.blobstore.blob(dst_key)
+                        print("checking", blob.url, "->", dst_blob.url)
+                        self.assertEqual(blob.size(), dst_blob.size())
 
     def test_upload_name_length_error(self):
         submission_id = f"{uuid4()}"

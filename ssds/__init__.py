@@ -76,14 +76,15 @@ class SSDS:
     def upload(self,
                src_url: str,
                submission_id: str,
-               name: Optional[str]=None):
+               name: Optional[str]=None,
+               subdir: Optional[str]=None):
         """
         Upload files from src_url directory and yield ssds_key for each file.
         This returns a generator that must be iterated for uploads to occur.
         """
         name = self._check_name_exists(submission_id, name)
         pfx, listing = listing_for_url(src_url)
-        for ssds_key in self._upload_tree(listing, pfx, submission_id, name):
+        for ssds_key in self._upload_tree(listing, pfx, submission_id, name, subdir):
             yield ssds_key
 
     def copy(self, src_url: str, submission_id: str, name: str, submission_path: str):
@@ -115,16 +116,19 @@ class SSDS:
                      listing: Iterable[Blob],
                      pfx: str,
                      submission_id: str,
-                     name: str) -> Generator[str, None, None]:
+                     name: str,
+                     subdir: Optional[str]=None) -> Generator[str, None, None]:
         assert " " not in name  # TODO: create regex to enforce name format?
         assert self._name_delimeter not in name  # TODO: create regex to enforce name format?
 
+        subdir = f"{subdir.strip('/')}" if subdir else ""
         oneshot_uploads = async_set()
         for blob in listing:
             if oneshot_uploads is not None:
                 for ssds_key in oneshot_uploads.consume_finished():
                     yield ssds_key
-            ssds_key = self._compose_ssds_key(submission_id, name, blob.key.replace(pfx, "", 1))
+            dst_key = blob.key.replace(pfx.strip("/"), subdir, 1)
+            ssds_key = self._compose_ssds_key(submission_id, name, dst_key)
             size = blob.size()
             part_size = get_s3_multipart_chunk_size(size)
             if part_size >= size:
@@ -275,11 +279,11 @@ def listing_for_url(url: str) -> Tuple[str, Union[Generator[S3Blob, None, None],
                    Generator[LocalBlob, None, None]]
     if url.startswith("s3://"):
         bucket_name, pfx = url[5:].split("/", 1)
-        listing = S3BlobStore(bucket_name).list(pfx)
+        listing = S3BlobStore(bucket_name).list(pfx.strip("/"))
     elif url.startswith("gs://"):
         bucket_name, pfx = url[5:].split("/", 1)
-        listing = GSBlobStore(bucket_name).list(pfx)
+        listing = GSBlobStore(bucket_name).list(pfx.strip("/"))
     else:
-        pfx = ""
-        listing = LocalBlobStore(os.path.realpath(os.path.normpath(url))).list()
+        pfx = os.path.realpath(os.path.normpath(url)).strip("/")
+        listing = LocalBlobStore("/").list(pfx)
     return pfx, listing

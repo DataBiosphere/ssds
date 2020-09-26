@@ -23,6 +23,7 @@ staging_cli = dispatch.group("staging", help=__doc__, arguments={
 @staging_cli.command("upload", arguments={
     "--submission-id": dict(type=str, required=True, help="Submission id provided for your submission"),
     "--name": dict(type=str, default=None, help="Human readable name of submission. Cannot contain spaces"),
+    "--subdir": dict(type=str, default=None, help="destination subdirectory"),
     "path": dict(type=str, help="Directory containing submission material"),
 })
 def upload(args: argparse.Namespace):
@@ -31,7 +32,7 @@ def upload(args: argparse.Namespace):
     Existing files in the submission will be overwritten.
     """
     ssds = Staging[args.deployment].ssds
-    for ssds_key in ssds.upload(args.path, args.submission_id, args.name):
+    for ssds_key in ssds.upload(args.path, args.submission_id, args.name, subdir=args.subdir):
         print(ssds.compose_blobstore_url(ssds_key))
 
 @staging_cli.command("copy", arguments={
