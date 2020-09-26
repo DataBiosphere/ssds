@@ -96,5 +96,12 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
         dst_blob = mock.MagicMock(spec=LocalBlob)
         storage.verify_checksums("test", dst_blob, checksums)
 
+    def test_transform_key(self):
+        src_key = "some/key/or/other/to/what.txt"
+        src_pfx = "/some/key/"
+        dst_pfx = "bro/what/george////"
+        dst_key = storage.transform_key(src_key, src_pfx, dst_pfx)
+        self.assertEqual("bro/what/george/or/other/to/what.txt", dst_key)
+
 if __name__ == '__main__':
     unittest.main()
