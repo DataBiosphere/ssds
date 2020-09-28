@@ -131,3 +131,7 @@ def verify_checksums(src_url: str,
 def copy(src_blob: AnyBlob, dst_blob: AnyBlob):
     with CopyClient() as client:
         client.copy(src_blob, dst_blob)
+
+def transform_key(src_key: str, src_pfx: str, dst_pfx: str) -> str:
+    dst_key = src_key.replace(src_pfx.strip("/"), dst_pfx.strip("/"), 1)
+    return dst_key
