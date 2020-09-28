@@ -6,10 +6,9 @@ import gs_chunked_io as gscio
 from google.cloud.storage import Blob as GSNativeBlob, Bucket as GSNativeBucket
 from google.api_core import exceptions as gcp_exceptions
 
-from ssds import gcp
+from ssds import gcp, concurrency
 from ssds.blobstore import (BlobStore, Blob, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size,
                             BlobNotFoundError, BlobStoreUnknownError)
-from ssds.concurrency import async_queue, async_set
 
 
 class GSBlobStore(BlobStore):
@@ -142,7 +141,7 @@ class GSAsyncPartIterator(AsyncPartIterator):
             yield Part(0, data.getvalue())
         else:
             for chunk_number, data in gscio.for_each_chunk_async(self._blob,
-                                                                 async_set(),
+                                                                 concurrency.async_set(),
                                                                  self.chunk_size):
                 yield Part(chunk_number, data)
 
@@ -153,7 +152,7 @@ class GSMultipartWriter(MultipartWriter):
         if billing_project is not None:
             kwargs['user_project'] = billing_project
         bucket = gcp.storage_client().bucket(bucket_name, **kwargs)
-        self._part_uploader = gscio.AsyncPartUploader(key, bucket, async_set())
+        self._part_uploader = gscio.AsyncPartUploader(key, bucket, concurrency.async_set())
 
     def put_part(self, part: Part):
         self._part_uploader.put_part(part.number, part.data)
