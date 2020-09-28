@@ -10,10 +10,9 @@ from gs_chunked_io.async_collections import AsyncSet
 
 import botocore.exceptions
 
-from ssds import aws
+from ssds import aws, concurrency
 from ssds.blobstore import (BlobStore, Blob, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size,
                             BlobNotFoundError, BlobStoreUnknownError)
-from ssds.concurrency import async_set
 
 
 def catch_blob_not_found(func):
@@ -141,7 +140,7 @@ class S3AsyncPartIterator(AsyncPartIterator):
         if 1 == self._number_of_parts:
             yield self._get_part(0)
         else:
-            parts = async_set()
+            parts = concurrency.async_set()
             for part_number in range(self._number_of_parts):
                 parts.put(self._get_part, part_number)
                 for part in parts.consume_finished():
@@ -166,7 +165,7 @@ class S3MultipartWriter(MultipartWriter):
         self.mpu = aws.client("s3").create_multipart_upload(Bucket=bucket_name, Key=key)['UploadId']
         self.parts: List[Dict[str, Union[str, int]]] = list()
         self._closed = False
-        self._part_uploads = async_set()
+        self._part_uploads = concurrency.async_set()
 
     def _put_part(self, part: Part) -> Dict[str, Union[str, int]]:
         aws_part_number = part.number + 1
@@ -198,10 +197,12 @@ class S3MultipartWriter(MultipartWriter):
         return dict(ETag=resp['CopyPartResult']['ETag'], PartNumber=aws_part_number)
 
     def put_part(self, part: Part):
+        self._part_uploads.concurrency = concurrency.MAX_PASSTHROUGH_CONCURRENCY
         self._collect_parts()
         self._part_uploads.put(self._put_part, part)
 
     def put_part_copy(self, part_number: int, src_blob: S3Blob):
+        self._part_uploads.concurrency = concurrency.MAX_RPC_CONCURRENCY
         self._collect_parts()
         self._part_uploads.put(self._put_part_copy, part_number, src_blob)
 
