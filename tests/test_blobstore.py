@@ -19,9 +19,10 @@ from ssds import aws, checksum
 from ssds.blobstore import (AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB, get_s3_multipart_chunk_size, Part,
                             BlobNotFoundError)
 from ssds.blobstore.s3 import S3BlobStore, S3AsyncPartIterator, S3MultipartWriter
-from ssds.blobstore.gs import GSBlobStore, GSAsyncPartIterator, _client
+from ssds.blobstore.gs import GSBlobStore, GSAsyncPartIterator
 from ssds.blobstore.local import LocalBlobStore
 from ssds.deployment import _S3StagingTest, _GSStagingTest
+from ssds import gcp
 from tests import infra, TestData
 
 
@@ -158,7 +159,7 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def _put_gs_obj(self, bucket: str, data: bytes, key: Optional[str]=None) -> str:
         key = key or f"{uuid4()}"
-        blob = _client().bucket(bucket).blob(key)
+        blob = gcp.storage_client().bucket(bucket).blob(key)
         blob.upload_from_file(io.BytesIO(data))
         return key
 
