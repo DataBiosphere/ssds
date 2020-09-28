@@ -54,7 +54,7 @@ class SSDS:
                 prev_submission_id = submission_id
 
     def __repr__(self) -> str:
-        return self.__class__.__name__
+        return f"<SSDS {self.__class__.__name__} {self.blobstore_class.schema}{self.bucket}>"
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -86,6 +86,10 @@ class SSDS:
         pfx, listing = listing_for_url(src_url)
         for ssds_key in self._upload_tree(listing, pfx, submission_id, name, subdir):
             yield ssds_key
+        logger.info(f"Completed upload: src_url='{src_url}' "
+                    f"submission_id='{submission_id}' "
+                    f"name='{name}' "
+                    f"subdir='{subdir}'")
 
     def copy(self, src_url: str, submission_id: str, name: str, submission_path: str):
         """
@@ -158,9 +162,11 @@ class SSDS:
         dst_key = f"{self.prefix}/{ssds_key}"
         gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
         s3_etag = checksum.md5(data).hexdigest()
-        self.blobstore.blob(dst_key).put(data)
+        dst_blob = self.blobstore.blob(dst_key)
+        dst_blob.put(data)
         tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
-        self.blobstore.blob(dst_key).put_tags(tags)
+        dst_blob.put_tags(tags)
+        logger.info("Uploaded '{src_url}' -> '{dst_blob.url()}'")
         return ssds_key
 
     def _upload_multipart(self,
@@ -176,8 +182,8 @@ class SSDS:
             checksums = dict(s3=checksum.S3EtagUnordered(), gs=checksum.GScrc32cUnordered())
         else:
             raise TypeError(f"Unknown blob type {type(src_blob)}")
-        key = f"{self.prefix}/{ssds_key}"
-        with self.blobstore.blob(key).multipart_writer() as uploader:
+        dst_blob = self.blobstore.blob(f"{self.prefix}/{ssds_key}")
+        with dst_blob.multipart_writer() as uploader:
             for part in src_blob.parts():
                 for cs in checksums.values():
                     if isinstance(cs, checksum.UnorderedChecksum):
@@ -190,14 +196,15 @@ class SSDS:
 
         def _tag():
             if self.blobstore_class == S3BlobStore:
-                assert checksums['s3'] == self.blobstore.blob(key).cloud_native_checksum()
+                assert checksums['s3'] == dst_blob.cloud_native_checksum()
             if self.blobstore_class == GSBlobStore:
-                assert checksums['gs'] == self.blobstore.blob(key).cloud_native_checksum()
+                assert checksums['gs'] == dst_blob.cloud_native_checksum()
             tags = {SSDSObjectTag.SSDS_MD5: checksums['s3'], SSDSObjectTag.SSDS_CRC32C: checksums['gs']}
-            self.blobstore.blob(key).put_tags(tags)
+            dst_blob.put_tags(tags)
 
         # TODO: parallelize tagging
         _tag()
+        logger.info("Uploaded '{src_url}' -> '{dst_blob.url()}'")
         return ssds_key
 
     def compose_blobstore_url(self, ssds_key: str) -> str:
@@ -256,6 +263,10 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
     for synced_key in oneshot_uploads.consume():
         if synced_key is not None:
             yield synced_key
+    logger.info(f"Completed sync: "
+                f"submission_id='{submission_id}' "
+                f"src='{src}' "
+                f"dst='{dst}'")
 
 def blob_for_url(url: str) -> Union[LocalBlob, S3Blob, GSBlob]:
     assert url

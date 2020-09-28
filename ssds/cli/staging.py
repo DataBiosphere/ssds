@@ -33,7 +33,7 @@ def upload(args: argparse.Namespace):
     """
     ssds = Staging[args.deployment].ssds
     for ssds_key in ssds.upload(args.path, args.submission_id, args.name, subdir=args.subdir):
-        print(ssds.compose_blobstore_url(ssds_key))
+        pass
 
 @staging_cli.command("copy", arguments={
     "--submission-id": dict(type=str, required=True, help="Submission id provided for your submission"),
