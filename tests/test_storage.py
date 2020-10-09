@@ -58,10 +58,19 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                                           (s3_blobstore, gs_blobstore),
                                           ignore_missing_checksums=False)
 
+    def test_copy_client_compute_checksums(self):
+        expected_data_map = self._do_blobstore_copies((local_blobstore, s3_blobstore, gs_blobstore),
+                                                      (s3_blobstore, gs_blobstore),
+                                                      compute_checksums=True)
+        for blob, expected_data in expected_data_map.items():
+            with self.subTest(blob.url):
+                self.assertEqual(blob.get(), expected_data)
+
     def _do_blobstore_copies(self,
                              src_blobstores=(local_blobstore, s3_blobstore, gs_blobstore),
                              dst_blobstores=(local_blobstore, s3_blobstore, gs_blobstore),
-                             ignore_missing_checksums=True):
+                             ignore_missing_checksums=True,
+                             compute_checksums=False):
         oneshot, multipart = test_data.uploaded([local_blobstore, s3_blobstore, gs_blobstore])
         expected_data_map = dict()
         with storage.CopyClient(ignore_missing_checksums=ignore_missing_checksums) as client:
@@ -70,7 +79,10 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                     for data_bundle in (oneshot, multipart):
                         src_blob = src_bs.blob(data_bundle['key'])
                         dst_blob = dst_bs.blob(f"{uuid4()}")
-                        client.copy(src_blob, dst_blob)
+                        if compute_checksums:
+                            client.copy_compute_checksums(src_blob, dst_blob)
+                        else:
+                            client.copy(src_blob, dst_blob)
                         expected_data_map[dst_blob] = data_bundle['data']
         return expected_data_map
 

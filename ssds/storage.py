@@ -48,6 +48,26 @@ class CopyClient:
             else:
                 self._copy_multipart(src_blob, dst_blob)
 
+    def copy_compute_checksums(self, src_blob: AnyBlob, dst_blob: CloudBlob):
+        """
+        Copy from `src_blob` to `dst_blob`, computing checksums
+        This always causes data to pass through the executing instance.
+        """
+        def _do_oneshot_copy():
+            tags = copy_oneshot_passthrough(src_blob, dst_blob, compute_checksums=True)
+            dst_blob.put_tags(tags)
+            verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
+            logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+
+        size = src_blob.size()
+        if size <= get_s3_multipart_chunk_size(size):
+            self._oneshot_copies.put(_do_oneshot_copy)
+        else:
+            tags = copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=True)
+            dst_blob.put_tags(tags)
+            verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
+            logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+
     def _copy_intra_cloud(self, src_blob: AnyBlob, dst_blob: AnyBlob):
         assert isinstance(src_blob, type(dst_blob))
 
