@@ -32,6 +32,11 @@ class CopyClient:
         self._oneshot_copies = async_set(10)
 
     def copy(self, src_blob: AnyBlob, dst_blob: AnyBlob):
+        """
+        Copy from `src_blob` to `dst_blob`
+        This avoids data passthrough when possible, e.g. S3->S3 or GS->GS. For GS->GS copies, passthrough may be forced
+        if the source bucket is requester pays. Checksums are computed for Local->Cloud copies.
+        """
         if isinstance(dst_blob, LocalBlob):
             self._oneshot_copies.put(src_blob.download, dst_blob.url)
         elif isinstance(src_blob, type(dst_blob)):
@@ -63,13 +68,10 @@ class CopyClient:
 
         def do_copy():
             if isinstance(src_blob, LocalBlob):
-                data = src_blob.get()
-                tags = {SSDSObjectTag.SSDS_MD5: checksum.md5(data).hexdigest(),
-                        SSDSObjectTag.SSDS_CRC32C: checksum.crc32c(data).google_storage_crc32c()}
+                tags = copy_oneshot_passthrough(src_blob, dst_blob, compute_checksums=True)
             else:
-                data = src_blob.get()
                 tags = src_blob.get_tags()
-            dst_blob.put(data)
+                copy_oneshot_passthrough(src_blob, dst_blob, compute_checksums=False)
             verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
             dst_blob.put_tags(tags)
             logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
@@ -79,29 +81,13 @@ class CopyClient:
     def _copy_multipart(self, src_blob: AnyBlob, dst_blob: CloudBlob):
         assert not isinstance(src_blob, type(dst_blob))
         if isinstance(src_blob, LocalBlob):
-            tags = self._do_copy_multipart(src_blob, dst_blob, compute_checksums=True)
+            tags = copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=True)
         else:
             tags = src_blob.get_tags()
-            self._do_copy_multipart(src_blob, dst_blob, compute_checksums=False)
+            copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=False)
         verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
         dst_blob.put_tags(tags)
         logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
-
-    def _do_copy_multipart(self,
-                           src_blob: AnyBlob,
-                           dst_blob: CloudBlob,
-                           compute_checksums: bool=False) -> Dict[str, str]:
-        if compute_checksums:
-            checksums = {SSDSObjectTag.SSDS_MD5: checksum.S3EtagUnordered(),
-                         SSDSObjectTag.SSDS_CRC32C: checksum.GScrc32cUnordered()}
-        else:
-            checksums = dict()
-        with dst_blob.multipart_writer() as writer:
-            for part in src_blob.parts():
-                for cs in checksums.values():
-                    cs.update(part.number, part.data)
-                writer.put_part(part)
-        return {key: cs.hexdigest() for key, cs in checksums.items()}
 
     def __enter__(self):
         return self
@@ -127,6 +113,41 @@ def verify_checksums(src_url: str,
                 logger.warning(msg)
             else:
                 raise SSDSMissingChecksum(msg)
+
+def copy_oneshot_passthrough(src_blob: AnyBlob,
+                             dst_blob: CloudBlob,
+                             compute_checksums: bool=False) -> Dict[str, str]:
+    """
+    Copy from `src_blob` to `dst_blob`, passing data through the executing instance.
+    Optionally compute checksums.
+    """
+    data = src_blob.get()
+    if compute_checksums:
+        checksums = {SSDSObjectTag.SSDS_MD5: checksum.md5(data).hexdigest(),
+                     SSDSObjectTag.SSDS_CRC32C: checksum.crc32c(data).google_storage_crc32c()}
+    else:
+        checksums = dict()
+    dst_blob.put(data)
+    return checksums
+
+def copy_multipart_passthrough(src_blob: AnyBlob,
+                               dst_blob: CloudBlob,
+                               compute_checksums: bool=False) -> Dict[str, str]:
+    """
+    Copy from `src_blob` to `dst_blob`, passing data through the executing instance.
+    Optionally compute checksums.
+    """
+    if compute_checksums:
+        checksums = {SSDSObjectTag.SSDS_MD5: checksum.S3EtagUnordered(),
+                     SSDSObjectTag.SSDS_CRC32C: checksum.GScrc32cUnordered()}
+    else:
+        checksums = dict()
+    with dst_blob.multipart_writer() as writer:
+        for part in src_blob.parts():
+            for cs in checksums.values():
+                cs.update(part.number, part.data)
+            writer.put_part(part)
+    return {key: cs.hexdigest() for key, cs in checksums.items()}
 
 def copy(src_blob: AnyBlob, dst_blob: AnyBlob):
     with CopyClient() as client:
