@@ -2,7 +2,7 @@
 Low level cloud agnostic storage API
 """
 import logging
-from typing import Any, Tuple, List, Dict, Union, Optional
+from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 
 from ssds import SSDSObjectTag, checksum
 from ssds.blobstore import get_s3_multipart_chunk_size
@@ -30,6 +30,7 @@ class CopyClient:
     def __init__(self, ignore_missing_checksums: bool=False):
         self._ignore_missing_checksums = ignore_missing_checksums
         self._oneshot_copies = async_set(10)
+        self._completed_keys: Set[str] = set()
 
     def copy(self, src_blob: AnyBlob, dst_blob: AnyBlob):
         """
@@ -38,7 +39,7 @@ class CopyClient:
         if the source bucket is requester pays. Checksums are computed for Local->Cloud copies.
         """
         if isinstance(dst_blob, LocalBlob):
-            self._oneshot_copies.put(src_blob.download, dst_blob.url)
+            self._download(src_blob, dst_blob)
         elif isinstance(src_blob, type(dst_blob)):
             self._copy_intra_cloud(src_blob, dst_blob)
         else:
@@ -57,6 +58,7 @@ class CopyClient:
             tags = copy_oneshot_passthrough(src_blob, dst_blob, compute_checksums=True)
             dst_blob.put_tags(tags)
             verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
+            self._completed_keys.add(dst_blob.key)
             logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
 
         size = src_blob.size()
@@ -66,7 +68,16 @@ class CopyClient:
             tags = copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=True)
             dst_blob.put_tags(tags)
             verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
+            self._completed_keys.add(dst_blob.key)
             logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+
+    def _download(self, src_blob: AnyBlob, dst_blob: LocalBlob):
+        def do_download():
+            src_blob.download(dst_blob.url)
+            self._completed_keys.add(dst_blob.key)
+            logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+
+        self._oneshot_copies.put(do_download)
 
     def _copy_intra_cloud(self, src_blob: AnyBlob, dst_blob: AnyBlob):
         assert isinstance(src_blob, type(dst_blob))
@@ -76,6 +87,7 @@ class CopyClient:
             dst_blob.copy_from(src_blob)  # type: ignore
             verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
             dst_blob.put_tags(tags)
+            self._completed_keys.add(dst_blob.key)
             logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
 
         if dst_blob.copy_from_is_multipart(src_blob):  # type: ignore
@@ -94,6 +106,7 @@ class CopyClient:
                 copy_oneshot_passthrough(src_blob, dst_blob, compute_checksums=False)
             verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
             dst_blob.put_tags(tags)
+            self._completed_keys.add(dst_blob.key)
             logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
 
         self._oneshot_copies.put(do_copy)
@@ -107,7 +120,12 @@ class CopyClient:
             copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=False)
         verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
         dst_blob.put_tags(tags)
+        self._completed_keys.add(dst_blob.key)
         logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+
+    def completed(self) -> Generator[str, None, None]:
+        while self._completed_keys:
+            yield self._completed_keys.pop()
 
     def __enter__(self):
         return self
