@@ -4,18 +4,23 @@ Low level cloud agnostic storage API
 import logging
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 
-from ssds import SSDSObjectTag, checksum
-from ssds.blobstore import get_s3_multipart_chunk_size
-from ssds.blobstore.s3 import S3Blob
-from ssds.blobstore.gs import GSBlob
-from ssds.blobstore.local import LocalBlob
+from ssds import checksum
+from ssds.blobstore import get_s3_multipart_chunk_size, Blob
+from ssds.blobstore.s3 import S3BlobStore, S3Blob
+from ssds.blobstore.gs import GSBlobStore, GSBlob
+from ssds.blobstore.local import LocalBlobStore, LocalBlob
 from ssds.concurrency import async_set
 
 
 logger = logging.getLogger(__name__)
 
+AnyBlobStore = Union[LocalBlobStore, S3BlobStore, GSBlobStore]
 AnyBlob = Union[LocalBlob, S3Blob, GSBlob]
 CloudBlob = Union[S3Blob, GSBlob]
+
+class SSDSObjectTag:
+    SSDS_MD5 = "SSDS_MD5"
+    SSDS_CRC32C = "SSDS_CRC32C"
 
 class SSDSCopyError(Exception):
     pass

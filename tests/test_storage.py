@@ -15,8 +15,7 @@ from typing import Tuple, Optional
 pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noqa
 sys.path.insert(0, pkg_root)  # noqa
 
-from ssds import SSDSObjectTag, checksum
-from ssds import storage
+from ssds import storage, checksum
 from ssds.blobstore.s3 import S3BlobStore, S3Blob
 from ssds.blobstore.gs import GSBlobStore, GSBlob
 from ssds.blobstore.local import LocalBlobStore, LocalBlob
@@ -89,8 +88,8 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
         return expected_data_map, [key for key in client.completed()]
 
     def test_verify_checksums(self):
-        tests = [(S3Blob, SSDSObjectTag.SSDS_MD5),
-                 (GSBlob, SSDSObjectTag.SSDS_CRC32C)]
+        tests = [(S3Blob, storage.SSDSObjectTag.SSDS_MD5),
+                 (GSBlob, storage.SSDSObjectTag.SSDS_CRC32C)]
         for blob_class, tag_key in tests:
             with self.subTest(blob_class=blob_class):
                 checksums = {tag_key: f"{uuid4()}"}
