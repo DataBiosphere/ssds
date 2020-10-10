@@ -70,10 +70,7 @@ class GSBlob(Blob):
             return blob.metadata.copy()
 
     def get(self) -> bytes:
-        blob = self._get_native_blob()
-        fileobj = io.BytesIO()
-        blob.download_to_file(fileobj)
-        return fileobj.getvalue()
+        return self._get_native_blob().download_as_bytes(checksum=None)
 
     def put(self, data: bytes):
         blob = self._gs_bucket.blob(self.key)
