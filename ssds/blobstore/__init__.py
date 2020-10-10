@@ -20,7 +20,7 @@ class BlobStore:
     def list(self, prefix: str=""):
         raise NotImplementedError()
 
-    def blob(self, key: str) -> "Blob":
+    def blob(self, key: str):
         raise NotImplementedError()
 
 class Blob:
