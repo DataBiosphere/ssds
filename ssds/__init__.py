@@ -8,7 +8,6 @@ from ssds.blobstore import BlobStore
 from ssds.blobstore.s3 import S3Blob, S3BlobStore
 from ssds.blobstore.gs import GSBlob, GSBlobStore
 from ssds.blobstore.local import LocalBlob, LocalBlobStore
-from ssds.concurrency import async_set
 
 
 logger = logging.getLogger(__name__)
@@ -130,59 +129,25 @@ class SSDS:
     def compose_blobstore_url(self, ssds_key: str) -> str:
         return f"{self.blobstore.schema}{self.bucket}/{self.prefix}/{ssds_key}"
 
+def is_synced(src_blob: storage.AnyBlob, dst_blob: storage.AnyBlob) -> bool:
+    if dst_blob.exists():
+        return dst_blob.get_tags() == src_blob.get_tags()
+    else:
+        return False
+
 def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]:
-    def _verify_and_tag(key: str):
-        src_tags = src.blobstore.blob(key).get_tags()
-        dst_checksum = dst.blobstore.blob(key).cloud_native_checksum()
-        if "gs://" == dst.blobstore.schema:
-            assert src_tags[storage.SSDSObjectTag.SSDS_CRC32C] == dst_checksum
-        elif "s3://" == dst.blobstore.schema:
-            assert src_tags[storage.SSDSObjectTag.SSDS_MD5] == dst_checksum
-        else:
-            raise RuntimeError("Unknown blobstore schema!")
-        dst.blobstore.blob(key).put_tags(src_tags)
-
-    def _already_synced(key: str) -> bool:
-        if not dst.blobstore.blob(key).exists():
-            return False
-        else:
-            src_tags = src.blobstore.blob(key).get_tags()
-            dst_tags = dst.blobstore.blob(key).get_tags()
-            if dst_tags != src_tags:
-                return False
+    with storage.CopyClient() as cc:
+        for src_blob in src.blobstore.list(f"{src.prefix}/{submission_id}"):
+            dst_blob = dst.blobstore.blob(src_blob.key)
+            if is_synced(src_blob, dst_blob):
+                logger.info(f"already-synced {src_blob.key} from {src} to {dst}")
             else:
-                return True
-
-    def _sync_oneshot(key: str, data: bytes) -> Optional[str]:
-        if not _already_synced(key):
-            logger.info(f"syncing {key} from {src} to {dst}")
-            dst.blobstore.blob(key).put(data)
-            _verify_and_tag(key)
-            return key
-        else:
-            logger.info(f"already-synced {key} from {src} to {dst}")
-            return None
-
-    oneshot_uploads = async_set()
-    for blob in src.blobstore.list(f"{src.prefix}/{submission_id}"):
-        parts = src.blobstore.blob(blob.key).parts()
-        if 1 == len(parts):
-            oneshot_uploads.put(_sync_oneshot, blob.key, list(parts)[0].data)
-        else:
-            if not _already_synced(blob.key):
-                logger.info(f"syncing {blob.key} from {src} to {dst}")
-                with dst.blobstore.blob(blob.key).multipart_writer() as writer:
-                    for part in parts:
-                        writer.put_part(part)
-                _verify_and_tag(blob.key)
-                yield blob.key
-            else:
-                logger.info(f"already-synced {blob.key} from {src} to {dst}")
-        for synced_key in oneshot_uploads.consume_finished():
-            yield synced_key
-    for synced_key in oneshot_uploads.consume():
-        if synced_key is not None:
-            yield synced_key
+                logger.info(f"syncing {src_blob.key} from {src} to {dst}")
+                cc.copy(src_blob, dst_blob)
+            for key in cc.completed():
+                yield key
+    for key in cc.completed():
+        yield key
     logger.info(f"Completed sync: "
                 f"submission_id='{submission_id}' "
                 f"src='{src}' "
