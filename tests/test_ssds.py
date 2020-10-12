@@ -6,6 +6,7 @@ import time
 import logging
 import unittest
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noqa
@@ -69,14 +70,18 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                     for ssds_key in dst_ds.upload(src_url, submission_id, submission_name, subdir):
                         pass
                     print(test_name, "took", time.time() - start_time, "seconds")
-                    for blob in src_blobstore(src_bucket).list(src_pfx):
+
+                    def verify_upload(src_blob):
                         suffix = ((subdir.strip("/") + "/" if subdir else "")
-                                  + blob.key.replace(src_pfx, "", 1).strip("/"))
+                                  + src_blob.key.replace(src_pfx, "", 1).strip("/"))
                         expected_ssds_key = f"{submission_id}{dst_ds._name_delimeter}{submission_name}/{suffix}"
                         dst_key = f"{dst_ds.prefix}/{expected_ssds_key}"
                         dst_blob = dst_ds.blobstore.blob(dst_key)
-                        print("checking", blob.url, "->", dst_blob.url)
-                        self.assertEqual(blob.size(), dst_blob.size())
+                        print("checking", src_blob.url, "->", dst_blob.url)
+                        self.assertEqual(src_blob.size(), dst_blob.size())
+
+                    with ThreadPoolExecutor(max_workers=8) as e:
+                        e.map(verify_upload, [b for b in src_blobstore(src_bucket).list(src_pfx)])
 
     def test_upload_name_length_error(self):
         submission_id = f"{uuid4()}"
