@@ -1,17 +1,14 @@
 import os
 import sys
 import logging
-import contextlib
-from typing import Tuple, Dict, Union, Optional, Iterable, Generator, Type
-
-from gs_chunked_io.async_collections import AsyncSet
+from typing import Generator, Optional, Tuple, Dict, Type, Union
 
 from ssds import storage, checksum
 from ssds.blobstore import Blob, BlobStore, get_s3_multipart_chunk_size, Part
 from ssds.blobstore.s3 import S3Blob, S3BlobStore
 from ssds.blobstore.gs import GSBlob, GSBlobStore
 from ssds.blobstore.local import LocalBlob, LocalBlobStore
-from ssds.concurrency import async_set, async_queue
+from ssds.concurrency import async_set
 
 
 logger = logging.getLogger(__name__)
@@ -73,15 +70,27 @@ class SSDS:
                src_url: str,
                submission_id: str,
                name: Optional[str]=None,
-               subdir: Optional[str]=None):
+               subdir: Optional[str]=None) -> Generator[str, None, None]:
         """
         Upload files from src_url directory and yield ssds_key for each file.
         This returns a generator that must be iterated for uploads to occur.
         """
         name = self._check_name_exists(submission_id, name)
+        assert " " not in name  # TODO: create regex to enforce name format?
+        assert self._name_delimeter not in name  # TODO: create regex to enforce name format?
         pfx, listing = listing_for_url(src_url)
-        for ssds_key in self._upload_tree(listing, pfx, submission_id, name, subdir):
-            yield ssds_key
+        pfx = pfx.strip("/")
+        subdir = f"{subdir.strip('/')}" if subdir else ""
+        with storage.CopyClient() as cc:
+            for src_blob in listing:
+                path = src_blob.key.replace(pfx, subdir, 1)
+                ssds_key = self._compose_ssds_key(submission_id, name, path)
+                dst_blob = self.blobstore.blob(f"{self.prefix}/{ssds_key}")
+                cc.copy_compute_checksums(src_blob, dst_blob)
+                for key in cc.completed():
+                    yield key[len(f"{self.prefix}/"):]
+        for key in cc.completed():
+            yield key[len(f"{self.prefix}/"):]
         logger.info(f"Completed upload: src_url='{src_url}' "
                     f"submission_id='{submission_id}' "
                     f"name='{name}' "
@@ -111,36 +120,6 @@ class SSDS:
         elif existing_name and existing_name != name:
             raise ValueError("Cannot update name of existing submission")
         return name
-
-    def _upload_tree(self,
-                     listing: Iterable[Blob],
-                     pfx: str,
-                     submission_id: str,
-                     name: str,
-                     subdir: Optional[str]=None) -> Generator[str, None, None]:
-        assert " " not in name  # TODO: create regex to enforce name format?
-        assert self._name_delimeter not in name  # TODO: create regex to enforce name format?
-
-        subdir = f"{subdir.strip('/')}" if subdir else ""
-        oneshot_uploads = async_set()
-        for blob in listing:
-            if oneshot_uploads is not None:
-                for ssds_key in oneshot_uploads.consume_finished():
-                    yield ssds_key
-            dst_key = blob.key.replace(pfx.strip("/"), subdir, 1)
-            ssds_key = self._compose_ssds_key(submission_id, name, dst_key)
-            size = blob.size()
-            part_size = get_s3_multipart_chunk_size(size)
-            if part_size >= size:
-                if oneshot_uploads is not None:
-                    oneshot_uploads.put(self._upload_oneshot, blob, ssds_key)
-                else:
-                    yield self._upload_oneshot(blob, ssds_key)
-            else:
-                yield self._upload_multipart(blob, ssds_key, part_size)
-        if oneshot_uploads is not None:
-            for ssds_key in oneshot_uploads.consume():
-                yield ssds_key
 
     def _compose_ssds_key(self, submission_id: str, submission_name: str, path: str) -> str:
         path = path.strip("/")
