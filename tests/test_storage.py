@@ -46,7 +46,8 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_copy_client(self):
         with self.subTest("should work"):
-            expected_data_map = self._do_blobstore_copies()
+            expected_data_map, completed_keys = self._do_blobstore_copies()
+            self.assertEqual(len(expected_data_map), len(completed_keys))
             for blob, expected_data in expected_data_map.items():
                 with self.subTest(blob.url):
                     self.assertEqual(blob.get(), expected_data)
@@ -59,9 +60,10 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                                           ignore_missing_checksums=False)
 
     def test_copy_client_compute_checksums(self):
-        expected_data_map = self._do_blobstore_copies((local_blobstore, s3_blobstore, gs_blobstore),
-                                                      (s3_blobstore, gs_blobstore),
-                                                      compute_checksums=True)
+        expected_data_map, completed_keys = self._do_blobstore_copies((local_blobstore, s3_blobstore, gs_blobstore),
+                                                                      (s3_blobstore, gs_blobstore),
+                                                                      compute_checksums=True)
+        self.assertEqual(len(expected_data_map), len(completed_keys))
         for blob, expected_data in expected_data_map.items():
             with self.subTest(blob.url):
                 self.assertEqual(blob.get(), expected_data)
@@ -84,7 +86,7 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                         else:
                             client.copy(src_blob, dst_blob)
                         expected_data_map[dst_blob] = data_bundle['data']
-        return expected_data_map
+        return expected_data_map, [key for key in client.completed()]
 
     def test_verify_checksums(self):
         tests = [(S3Blob, SSDSObjectTag.SSDS_MD5),
