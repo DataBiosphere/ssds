@@ -6,7 +6,7 @@ from typing import Tuple, Dict, Union, Optional, Iterable, Generator, Type
 
 from gs_chunked_io.async_collections import AsyncSet
 
-from ssds import checksum
+from ssds import storage, checksum
 from ssds.blobstore import Blob, BlobStore, get_s3_multipart_chunk_size, Part
 from ssds.blobstore.s3 import S3Blob, S3BlobStore
 from ssds.blobstore.gs import GSBlob, GSBlobStore
@@ -19,10 +19,6 @@ logger = logging.getLogger(__name__)
 MAX_KEY_LENGTH = 1024  # this is the maximum length for S3 and GS object names
 # GS docs: https://cloud.google.com/storage/docs/naming-objects
 # S3 docs: https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html
-
-class SSDSObjectTag:
-    SSDS_MD5 = "SSDS_MD5"
-    SSDS_CRC32C = "SSDS_CRC32C"
 
 class SSDS:
     blobstore_class: Type[BlobStore]
@@ -95,7 +91,7 @@ class SSDS:
         """
         Copy files from local or cloud locations into the ssds.
         """
-        src_blob: Union[S3Blob, GSBlob, LocalBlob]
+        src_blob: storage.AnyBlob
         name = self._check_name_exists(submission_id, name)
         blob = blob_for_url(src_url)
         size = blob.size()
@@ -164,7 +160,7 @@ class SSDS:
         s3_etag = checksum.md5(data).hexdigest()
         dst_blob = self.blobstore.blob(dst_key)
         dst_blob.put(data)
-        tags = {SSDSObjectTag.SSDS_MD5: s3_etag, SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
+        tags = {storage.SSDSObjectTag.SSDS_MD5: s3_etag, storage.SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
         dst_blob.put_tags(tags)
         logger.info("Uploaded '{src_url}' -> '{dst_blob.url()}'")
         return ssds_key
@@ -199,7 +195,7 @@ class SSDS:
                 assert checksums['s3'] == dst_blob.cloud_native_checksum()
             if self.blobstore_class == GSBlobStore:
                 assert checksums['gs'] == dst_blob.cloud_native_checksum()
-            tags = {SSDSObjectTag.SSDS_MD5: checksums['s3'], SSDSObjectTag.SSDS_CRC32C: checksums['gs']}
+            tags = {storage.SSDSObjectTag.SSDS_MD5: checksums['s3'], storage.SSDSObjectTag.SSDS_CRC32C: checksums['gs']}
             dst_blob.put_tags(tags)
 
         # TODO: parallelize tagging
@@ -215,9 +211,9 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
         src_tags = src.blobstore.blob(key).get_tags()
         dst_checksum = dst.blobstore.blob(key).cloud_native_checksum()
         if "gs://" == dst.blobstore.schema:
-            assert src_tags[SSDSObjectTag.SSDS_CRC32C] == dst_checksum
+            assert src_tags[storage.SSDSObjectTag.SSDS_CRC32C] == dst_checksum
         elif "s3://" == dst.blobstore.schema:
-            assert src_tags[SSDSObjectTag.SSDS_MD5] == dst_checksum
+            assert src_tags[storage.SSDSObjectTag.SSDS_MD5] == dst_checksum
         else:
             raise RuntimeError("Unknown blobstore schema!")
         dst.blobstore.blob(key).put_tags(src_tags)
@@ -268,9 +264,9 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
                 f"src='{src}' "
                 f"dst='{dst}'")
 
-def blob_for_url(url: str) -> Union[LocalBlob, S3Blob, GSBlob]:
+def blob_for_url(url: str) -> storage.AnyBlob:
     assert url
-    blob: Union[S3Blob, GSBlob, LocalBlob]
+    blob: storage.AnyBlob
     if url.startswith("s3://"):
         bucket_name, key = url[5:].split("/", 1)
         blob = S3Blob(bucket_name, key)
@@ -281,11 +277,11 @@ def blob_for_url(url: str) -> Union[LocalBlob, S3Blob, GSBlob]:
         blob = LocalBlob("/", os.path.realpath(os.path.normpath(url)))
     return blob
 
-def blobstore_for_url(url: str) -> Tuple[str, Union[S3BlobStore, GSBlobStore, LocalBlobStore]]:
+def blobstore_for_url(url: str) -> Tuple[str, storage.AnyBlobStore]:
     """
     url is expected to be a prefix, NOT a key
     """
-    blobstore: Union[S3BlobStore, GSBlobStore, LocalBlobStore]
+    blobstore: storage.AnyBlobStore
     if url.startswith("s3://"):
         bucket_name, pfx = url[5:].split("/", 1)
         blobstore = S3BlobStore(bucket_name)
