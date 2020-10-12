@@ -1,10 +1,10 @@
 import os
 import sys
 import logging
-from typing import Generator, Optional, Tuple, Dict, Type, Union
+from typing import Generator, Optional, Tuple, Type, Union
 
-from ssds import storage, checksum
-from ssds.blobstore import Blob, BlobStore, get_s3_multipart_chunk_size, Part
+from ssds import storage
+from ssds.blobstore import BlobStore
 from ssds.blobstore.s3 import S3Blob, S3BlobStore
 from ssds.blobstore.gs import GSBlob, GSBlobStore
 from ssds.blobstore.local import LocalBlob, LocalBlobStore
@@ -98,18 +98,13 @@ class SSDS:
 
     def copy(self, src_url: str, submission_id: str, name: str, submission_path: str):
         """
-        Copy files from local or cloud locations into the ssds.
+        Copy files from local or cloud locations into the ssds, computing checksums.
         """
-        src_blob: storage.AnyBlob
         name = self._check_name_exists(submission_id, name)
-        blob = blob_for_url(src_url)
-        size = blob.size()
         ssds_key = self._compose_ssds_key(submission_id, name, submission_path)
-        part_size = get_s3_multipart_chunk_size(size)
-        if part_size >= size:
-            self._upload_oneshot(blob, ssds_key)
-        else:
-            self._upload_multipart(blob, ssds_key, part_size)
+        src_blob = blob_for_url(src_url)
+        dst_blob = self.blobstore.blob(f"{self.prefix}/{ssds_key}")
+        storage.copy_compute_checksums(src_blob, dst_blob)
 
     def _check_name_exists(self, submission_id: str, name: Optional[str]) -> str:
         existing_name = self.get_submission_name(submission_id)
@@ -130,56 +125,6 @@ class SSDS:
             raise ValueError(f"Total key length must not exceed {MAX_KEY_LENGTH} characters {os.linesep}"
                              f"{blobstore_key} is too long {os.linesep}"
                              f"Use a shorter submission name")
-        return ssds_key
-
-    def _upload_oneshot(self, src_blob: Blob, ssds_key: str) -> str:
-        data = src_blob.get()
-        dst_key = f"{self.prefix}/{ssds_key}"
-        gs_crc32c = checksum.crc32c(data).google_storage_crc32c()
-        s3_etag = checksum.md5(data).hexdigest()
-        dst_blob = self.blobstore.blob(dst_key)
-        dst_blob.put(data)
-        tags = {storage.SSDSObjectTag.SSDS_MD5: s3_etag, storage.SSDSObjectTag.SSDS_CRC32C: gs_crc32c}
-        dst_blob.put_tags(tags)
-        logger.info("Uploaded '{src_url}' -> '{dst_blob.url()}'")
-        return ssds_key
-
-    def _upload_multipart(self,
-                          src_blob: Blob,
-                          ssds_key: str,
-                          part_size: int) -> str:
-        checksums: Dict[str, Union[str, checksum.UnorderedChecksum]]
-        if isinstance(src_blob, S3Blob):
-            checksums = dict(s3=checksum.S3EtagUnordered(), gs=checksum.GScrc32cUnordered())
-        elif isinstance(src_blob, GSBlob):
-            checksums = dict(s3=checksum.S3EtagUnordered(), gs=src_blob.cloud_native_checksum())
-        elif isinstance(src_blob, LocalBlob):
-            checksums = dict(s3=checksum.S3EtagUnordered(), gs=checksum.GScrc32cUnordered())
-        else:
-            raise TypeError(f"Unknown blob type {type(src_blob)}")
-        dst_blob = self.blobstore.blob(f"{self.prefix}/{ssds_key}")
-        with dst_blob.multipart_writer() as uploader:
-            for part in src_blob.parts():
-                for cs in checksums.values():
-                    if isinstance(cs, checksum.UnorderedChecksum):
-                        cs.update(part.number, part.data)
-                uploader.put_part(part)
-
-        for platform, cs in checksums.items():
-            if isinstance(cs, checksum.UnorderedChecksum):
-                checksums[platform] = cs.hexdigest()
-
-        def _tag():
-            if self.blobstore_class == S3BlobStore:
-                assert checksums['s3'] == dst_blob.cloud_native_checksum()
-            if self.blobstore_class == GSBlobStore:
-                assert checksums['gs'] == dst_blob.cloud_native_checksum()
-            tags = {storage.SSDSObjectTag.SSDS_MD5: checksums['s3'], storage.SSDSObjectTag.SSDS_CRC32C: checksums['gs']}
-            dst_blob.put_tags(tags)
-
-        # TODO: parallelize tagging
-        _tag()
-        logger.info("Uploaded '{src_url}' -> '{dst_blob.url()}'")
         return ssds_key
 
     def compose_blobstore_url(self, ssds_key: str) -> str:
