@@ -2,6 +2,7 @@ include common.mk
 
 MODULES=ssds tests
 
+tests:=$(wildcard tests/test_*.py)
 test: lint mypy tests
 
 lint:
@@ -10,9 +11,13 @@ lint:
 mypy:
 	mypy --ignore-missing-imports $(MODULES)
 
-tests:
-	PYTHONWARNINGS=ignore:ResourceWarning coverage run --source=ssds \
-		-m unittest discover --start-directory tests --top-level-directory . --verbose
+test: $(tests)
+	coverage combine
+	rm -f .coverage.*
+
+# A pattern rule that runs a single test script
+$(tests): %.py : mypy lint
+	coverage run -p --source=ssds $*.py --verbose
 
 version: ssds/version.py
 
