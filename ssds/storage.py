@@ -61,70 +61,54 @@ class CopyClient:
         """
         def _do_oneshot_copy():
             tags = copy_oneshot_passthrough(src_blob, dst_blob, compute_checksums=True)
-            dst_blob.put_tags(tags)
-            verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
-            self._completed_keys.add(dst_blob.key)
-            logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+            self._finalize_copy(src_blob, dst_blob, tags)
 
         size = src_blob.size()
         if size <= get_s3_multipart_chunk_size(size):
             self._async_set.put(_do_oneshot_copy)
         else:
             tags = copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=True)
-            dst_blob.put_tags(tags)
-            verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
-            self._completed_keys.add(dst_blob.key)
-            logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+            self._async_set.put(self._finalize_copy, src_blob, dst_blob, tags)
 
     def _download(self, src_blob: AnyBlob, dst_blob: LocalBlob):
         def do_download():
             src_blob.download(dst_blob.url)
-            self._completed_keys.add(dst_blob.key)
-            logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+            self._finalize_copy(src_blob, dst_blob)
 
         self._async_set.put(do_download)
 
     def _copy_intra_cloud(self, src_blob: AnyBlob, dst_blob: AnyBlob):
         assert isinstance(src_blob, type(dst_blob))
 
-        def do_copy():
-            tags = src_blob.get_tags()
+        def do_oneshot_copy():
             dst_blob.copy_from(src_blob)  # type: ignore
-            verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
-            dst_blob.put_tags(tags)
-            self._completed_keys.add(dst_blob.key)
-            logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+            self._finalize_copy(src_blob, dst_blob)
 
         if dst_blob.copy_from_is_multipart(src_blob):  # type: ignore
-            do_copy()
+            dst_blob.copy_from(src_blob)  # type: ignore
+            self._async_set.put(self._finalize_copy, src_blob, dst_blob)
         else:
-            self._async_set.put(do_copy)
+            self._async_set.put(do_oneshot_copy)
 
     def _copy_oneshot(self, src_blob: AnyBlob, dst_blob: CloudBlob):
         assert not isinstance(src_blob, type(dst_blob))
 
         def do_copy():
-            if isinstance(src_blob, LocalBlob):
-                tags = copy_oneshot_passthrough(src_blob, dst_blob, compute_checksums=True)
-            else:
-                tags = src_blob.get_tags()
-                copy_oneshot_passthrough(src_blob, dst_blob, compute_checksums=False)
-            verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
-            dst_blob.put_tags(tags)
-            self._completed_keys.add(dst_blob.key)
-            logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+            tags = copy_oneshot_passthrough(src_blob, dst_blob, compute_checksums=isinstance(src_blob, LocalBlob))
+            self._finalize_copy(src_blob, dst_blob, tags)
 
         self._async_set.put(do_copy)
 
     def _copy_multipart(self, src_blob: AnyBlob, dst_blob: CloudBlob):
         assert not isinstance(src_blob, type(dst_blob))
-        if isinstance(src_blob, LocalBlob):
-            tags = copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=True)
-        else:
-            tags = src_blob.get_tags()
-            copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=False)
-        verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
-        dst_blob.put_tags(tags)
+        tags = copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=isinstance(src_blob, LocalBlob))
+        self._async_set.put(self._finalize_copy, src_blob, dst_blob, tags)
+
+    def _finalize_copy(self, src_blob: AnyBlob, dst_blob: AnyBlob, tags: Optional[dict]=None):
+        if not isinstance(dst_blob, LocalBlob):
+            tags = tags or src_blob.get_tags()
+            verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
+            dst_blob.put_tags(tags)
         self._completed_keys.add(dst_blob.key)
         logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
 
