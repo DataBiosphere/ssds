@@ -159,38 +159,40 @@ def verify_checksums(src_url: str,
 
 def copy_oneshot_passthrough(src_blob: AnyBlob,
                              dst_blob: CloudBlob,
-                             compute_checksums: bool=False) -> Dict[str, str]:
+                             compute_checksums: bool=False) -> Optional[Dict[str, str]]:
     """
     Copy from `src_blob` to `dst_blob`, passing data through the executing instance.
     Optionally compute checksums.
     """
     data = src_blob.get()
+    checksums: Optional[dict] = None
     if compute_checksums:
         checksums = {SSDSObjectTag.SSDS_MD5: checksum.md5(data).hexdigest(),
                      SSDSObjectTag.SSDS_CRC32C: checksum.crc32c(data).google_storage_crc32c()}
-    else:
-        checksums = dict()
     dst_blob.put(data)
     return checksums
 
 def copy_multipart_passthrough(src_blob: AnyBlob,
                                dst_blob: CloudBlob,
-                               compute_checksums: bool=False) -> Dict[str, str]:
+                               compute_checksums: bool=False) -> Optional[Dict[str, str]]:
     """
     Copy from `src_blob` to `dst_blob`, passing data through the executing instance.
     Optionally compute checksums.
     """
+    checksums: Optional[dict] = None
     if compute_checksums:
         checksums = {SSDSObjectTag.SSDS_MD5: checksum.S3EtagUnordered(),
                      SSDSObjectTag.SSDS_CRC32C: checksum.GScrc32cUnordered()}
-    else:
-        checksums = dict()
     with dst_blob.multipart_writer() as writer:
         for part in src_blob.parts():
-            for cs in checksums.values():
-                cs.update(part.number, part.data)
+            if checksums is not None:
+                for cs in checksums.values():
+                    cs.update(part.number, part.data)
             writer.put_part(part)
-    return {key: cs.hexdigest() for key, cs in checksums.items()}
+    if checksums is not None:
+        return {key: cs.hexdigest() for key, cs in checksums.items()}
+    else:
+        return None
 
 def copy(src_blob: AnyBlob, dst_blob: AnyBlob):
     with CopyClient() as client:
