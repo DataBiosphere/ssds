@@ -34,7 +34,7 @@ class SSDSIncorrectChecksum(SSDSCopyError):
 class CopyClient:
     def __init__(self, ignore_missing_checksums: bool=False):
         self._ignore_missing_checksums = ignore_missing_checksums
-        self._oneshot_copies = async_set(10)
+        self._async_set = async_set(10)
         self._completed_keys: Set[str] = set()
 
     def copy(self, src_blob: AnyBlob, dst_blob: AnyBlob):
@@ -68,7 +68,7 @@ class CopyClient:
 
         size = src_blob.size()
         if size <= get_s3_multipart_chunk_size(size):
-            self._oneshot_copies.put(_do_oneshot_copy)
+            self._async_set.put(_do_oneshot_copy)
         else:
             tags = copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=True)
             dst_blob.put_tags(tags)
@@ -82,7 +82,7 @@ class CopyClient:
             self._completed_keys.add(dst_blob.key)
             logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
 
-        self._oneshot_copies.put(do_download)
+        self._async_set.put(do_download)
 
     def _copy_intra_cloud(self, src_blob: AnyBlob, dst_blob: AnyBlob):
         assert isinstance(src_blob, type(dst_blob))
@@ -98,7 +98,7 @@ class CopyClient:
         if dst_blob.copy_from_is_multipart(src_blob):  # type: ignore
             do_copy()
         else:
-            self._oneshot_copies.put(do_copy)
+            self._async_set.put(do_copy)
 
     def _copy_oneshot(self, src_blob: AnyBlob, dst_blob: CloudBlob):
         assert not isinstance(src_blob, type(dst_blob))
@@ -114,7 +114,7 @@ class CopyClient:
             self._completed_keys.add(dst_blob.key)
             logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
 
-        self._oneshot_copies.put(do_copy)
+        self._async_set.put(do_copy)
 
     def _copy_multipart(self, src_blob: AnyBlob, dst_blob: CloudBlob):
         assert not isinstance(src_blob, type(dst_blob))
@@ -136,7 +136,7 @@ class CopyClient:
         return self
 
     def __exit__(self, *args, **kwargs):
-        for _ in self._oneshot_copies.consume():
+        for _ in self._async_set.consume():
             pass
 
 def verify_checksums(src_url: str,
