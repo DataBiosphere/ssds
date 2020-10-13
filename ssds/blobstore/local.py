@@ -57,6 +57,10 @@ class LocalBlob(Blob):
         with open(self._path, "wb") as fh:
             fh.write(data)
 
+    @catch_blob_not_found
+    def delete(self):
+        os.remove(self._path)
+
     def copy_from_is_multipart(self, src_blob: "LocalBlob") -> bool:
         return False
 

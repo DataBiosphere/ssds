@@ -42,6 +42,9 @@ class Blob:
     def put(self, data: bytes):
         raise NotImplementedError()
 
+    def delete(self):
+        raise NotImplementedError()
+
     def copy_from_is_multipart(self, src_blob: Any) -> bool:
         raise NotImplementedError()
 
