@@ -16,6 +16,7 @@ pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noq
 sys.path.insert(0, pkg_root)  # noqa
 
 from ssds import storage, checksum
+from ssds.blobstore import BlobNotFoundError
 from ssds.blobstore.s3 import S3BlobStore, S3Blob
 from ssds.blobstore.gs import GSBlobStore, GSBlob
 from ssds.blobstore.local import LocalBlobStore, LocalBlob
@@ -86,6 +87,71 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                             client.copy(src_blob, dst_blob)
                         expected_data_map[dst_blob] = data_bundle['data']
         return expected_data_map, [key for key in client.completed()]
+
+    def test_move_client(self):
+        with self.subTest("should work"):
+            expected_data_map, completed_keys = self._do_blobstore_moves()
+            self.assertEqual(len(expected_data_map), len(completed_keys))
+            for blob_pair, expected_data in expected_data_map.items():
+                src_blob, dst_blob = blob_pair
+                with self.subTest(dst_blob.url):
+                    self.assertEqual(dst_blob.get(), expected_data)
+                with self.assertRaises(BlobNotFoundError):
+                    src_blob.get()
+
+        # Cloud tests data is not tagged with checksums. This should raise.
+        with self.subTest("should raise"):
+            with self.assertRaises(storage.SSDSCopyError):
+                self._do_blobstore_moves((s3_blobstore, gs_blobstore),
+                                         (s3_blobstore, gs_blobstore),
+                                         ignore_missing_checksums=False)
+
+    def test_move_client_compute_checksums(self):
+        expected_data_map, completed_keys = self._do_blobstore_moves((local_blobstore, s3_blobstore, gs_blobstore),
+                                                                     (s3_blobstore, gs_blobstore),
+                                                                     compute_checksums=True)
+        self.assertEqual(len(expected_data_map), len(completed_keys))
+        for blob_pair, expected_data in expected_data_map.items():
+            src_blob, dst_blob = blob_pair
+            with self.subTest(dst_blob.url):
+                self.assertEqual(dst_blob.get(), expected_data)
+            with self.assertRaises(BlobNotFoundError):
+                src_blob.get()
+
+    def _do_blobstore_moves(self,
+                            src_blobstores=(local_blobstore, s3_blobstore, gs_blobstore),
+                            dst_blobstores=(local_blobstore, s3_blobstore, gs_blobstore),
+                            ignore_missing_checksums=True,
+                            compute_checksums=False):
+        oneshot, multipart = test_data.oneshot, test_data.multipart
+        expected_data_map = dict()
+        with storage.MoveClient(ignore_missing_checksums=ignore_missing_checksums) as client:
+            for src_bs in src_blobstores:
+                for dst_bs in dst_blobstores:
+                    for expected_data in (oneshot, multipart):
+                        src_blob = src_bs.blob(f"{uuid4()}")
+                        src_blob.put(expected_data)
+                        dst_blob = dst_bs.blob(f"{uuid4()}")
+                        if compute_checksums:
+                            client.move_compute_checksums(src_blob, dst_blob)
+                        else:
+                            client.move(src_blob, dst_blob)
+                        expected_data_map[(src_blob, dst_blob)] = expected_data
+        return expected_data_map, [key for key in client.completed()]
+
+    def test_move(self):
+        src_blob = mock.MagicMock()
+        dst_blob = mock.MagicMock()
+        with mock.patch("ssds.storage.MoveClient.move") as move_method:
+            storage.move(src_blob, dst_blob)
+            move_method.assert_called_once()
+
+    def test_move_compute_checksums(self):
+        src_blob = mock.MagicMock()
+        dst_blob = mock.MagicMock()
+        with mock.patch("ssds.storage.MoveClient.move_compute_checksums") as move_method:
+            storage.move_compute_checksums(src_blob, dst_blob)
+            move_method.assert_called_once()
 
     def test_verify_checksums(self):
         tests = [(S3Blob, storage.SSDSObjectTag.SSDS_MD5),

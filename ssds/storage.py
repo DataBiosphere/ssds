@@ -123,6 +123,33 @@ class CopyClient:
         for _ in self._async_set.consume():
             pass
 
+class MoveClient(CopyClient):
+    """
+    Copy objects, delete source objects upon succesful copy.
+    """
+    def move(self, src_blob: AnyBlob, dst_blob: AnyBlob):
+        super().copy(src_blob, dst_blob)
+
+    def move_compute_checksums(self, src_blob: AnyBlob, dst_blob: CloudBlob):
+        super().copy_compute_checksums(src_blob, dst_blob)
+
+    def _finalize_copy(self, src_blob: AnyBlob, dst_blob: AnyBlob, tags: Optional[dict]=None):
+        if not dst_blob.exists():
+            raise SSDSCopyError(f"Move failed! Not deleting source. '{src_blob.url}' -> '{dst_blob.url}'")
+        if not isinstance(dst_blob, LocalBlob):
+            tags = tags or src_blob.get_tags()
+            verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
+            dst_blob.put_tags(tags)
+        self._completed_keys.add(dst_blob.key)
+        logger.info(f"Moved {src_blob.url} to {dst_blob.url}")
+        src_blob.delete()
+
+    def copy(self, src_blob: AnyBlob, dst_blob: AnyBlob):
+        raise TypeError("Please use storage.CopyClient to perform copies")
+
+    def copy_compute_checksums(self, src_blob: AnyBlob, dst_blob: AnyBlob):
+        raise TypeError("Please use storage.CopyClient to perform copies")
+
 def verify_checksums(src_url: str,
                      dst_blob: CloudBlob,
                      checksums: Dict[str, str],
@@ -185,6 +212,14 @@ def copy(src_blob: AnyBlob, dst_blob: AnyBlob):
 def copy_compute_checksums(src_blob: AnyBlob, dst_blob: CloudBlob):
     with CopyClient() as client:
         client.copy_compute_checksums(src_blob, dst_blob)
+
+def move(src_blob: AnyBlob, dst_blob: AnyBlob):
+    with MoveClient() as client:
+        client.move(src_blob, dst_blob)
+
+def move_compute_checksums(src_blob: AnyBlob, dst_blob: CloudBlob):
+    with MoveClient() as client:
+        client.move_compute_checksums(src_blob, dst_blob)
 
 def transform_key(src_key: str, src_pfx: str, dst_pfx: str) -> str:
     dst_key = src_key.replace(src_pfx.strip("/"), dst_pfx.strip("/"), 1)
