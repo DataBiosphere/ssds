@@ -72,6 +72,10 @@ class S3Blob(Blob):
         blob = self._s3_bucket.Object(self.key)
         blob.upload_fileobj(io.BytesIO(data))
 
+    @catch_blob_not_found
+    def delete(self):
+        self._s3_bucket.Object(self.key).delete()
+
     def copy_from_is_multipart(self, src_blob: "S3Blob") -> bool:
         size = src_blob.size()
         return size >= get_s3_multipart_chunk_size(size)

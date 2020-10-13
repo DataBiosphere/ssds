@@ -43,7 +43,7 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
         self.assertEqual("s3://", S3BlobStore.schema)
         self.assertEqual("gs://", GSBlobStore.schema)
 
-    def test_put_get(self):
+    def test_put_get_delete(self):
         key = f"{uuid4()}"
         expected_data = test_data.oneshot
         for bs in (local_blobstore, s3_blobstore, gs_blobstore):
@@ -51,8 +51,9 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                 bs.blob(key).put(expected_data)
                 data = bs.blob(key).get()
                 self.assertEqual(data, expected_data)
+                bs.blob(key).delete()
                 with self.assertRaises(BlobNotFoundError):
-                    bs.blob(f"{uuid4()}").get()
+                    bs.blob(key).get()
 
     def test_copy_from(self):
         dst_key = f"{uuid4()}"

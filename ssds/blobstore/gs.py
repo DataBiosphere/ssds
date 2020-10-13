@@ -76,6 +76,9 @@ class GSBlob(Blob):
         blob = self._gs_bucket.blob(self.key)
         blob.upload_from_file(io.BytesIO(data))
 
+    def delete(self):
+        self._get_native_blob().delete()
+
     def copy_from_is_multipart(self, src_blob: "GSBlob") -> bool:
         return src_blob._gs_bucket.user_project is not None
 
