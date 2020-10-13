@@ -137,11 +137,14 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
 
     def test_exists(self):
         key = f"{uuid4()}"
-        for bs in (s3_blobstore, gs_blobstore):
+        for bs in (local_blobstore, s3_blobstore, gs_blobstore):
             with self.subTest(blobstore=bs, key=key):
                 self.assertFalse(bs.blob(key).exists())
                 bs.blob(key).put(b"")
                 self.assertTrue(bs.blob(key).exists())
+                if isinstance(bs, LocalBlobStore):
+                    with self.assertRaises(ValueError):
+                        bs.blob("/").exists()
 
     def test_multipart_writers(self):
         expected_data = test_data.multipart

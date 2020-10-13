@@ -78,6 +78,11 @@ class LocalBlob(Blob):
         if self.url != path:
             shutil.copyfile(self._path, path)
 
+    def exists(self) -> bool:
+        if os.path.isdir(self._path):
+            raise ValueError(f"'{self._path}' exists but is not a file!")
+        return os.path.isfile(self._path)
+
     @catch_blob_not_found
     def size(self) -> int:
         return os.path.getsize(self._path)
