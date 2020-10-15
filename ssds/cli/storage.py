@@ -6,7 +6,6 @@ import sys
 import logging
 import argparse
 
-import ssds
 from ssds import storage
 from ssds.cli import dispatch
 
@@ -14,7 +13,7 @@ from ssds.cli import dispatch
 # output logging to stdout
 # https://stackoverflow.com/a/56144390
 logging.basicConfig()
-ssds.logger.level = logging.INFO
+storage.logger.level = logging.INFO
 
 storage_cli = dispatch.group("storage", help=__doc__)
 
@@ -32,12 +31,12 @@ def cp(args: argparse.Namespace):
     """
     with storage.CopyClient(ignore_missing_checksums=args.ignore_missing_checksums) as client:
         if not args.recursive:
-            src_blob = ssds.blob_for_url(args.src_url)
-            dst_blob = ssds.blob_for_url(args.dst_url)
+            src_blob = storage.blob_for_url(args.src_url)
+            dst_blob = storage.blob_for_url(args.dst_url)
             client.copy(src_blob, dst_blob)
         else:
-            src_pfx, listing = ssds.listing_for_url(args.src_url)
-            dst_pfx, dst_blobstore = ssds.blobstore_for_url(args.dst_url)
+            src_pfx, listing = storage.listing_for_url(args.src_url)
+            dst_pfx, dst_blobstore = storage.blobstore_for_url(args.dst_url)
             for src_blob in listing:
                 dst_key = storage.transform_key(src_blob.key, src_pfx, dst_pfx)
                 dst_blob = dst_blobstore.blob(dst_key)

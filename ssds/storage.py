@@ -194,3 +194,50 @@ def copy_compute_checksums(src_blob: AnyBlob, dst_blob: CloudBlob):
 def transform_key(src_key: str, src_pfx: str, dst_pfx: str) -> str:
     dst_key = src_key.replace(src_pfx.strip("/"), dst_pfx.strip("/"), 1)
     return dst_key
+
+def blob_for_url(url: str) -> AnyBlob:
+    assert url
+    blob: AnyBlob
+    if url.startswith("s3://"):
+        bucket_name, key = url[5:].split("/", 1)
+        blob = S3Blob(bucket_name, key)
+    elif url.startswith("gs://"):
+        bucket_name, key = url[5:].split("/", 1)
+        blob = GSBlob(bucket_name, key)
+    else:
+        blob = LocalBlob("/", os.path.realpath(os.path.normpath(url)))
+    return blob
+
+def blobstore_for_url(url: str) -> Tuple[str, AnyBlobStore]:
+    """
+    url is expected to be a prefix, NOT a key
+    """
+    blobstore: AnyBlobStore
+    if url.startswith("s3://"):
+        bucket_name, pfx = url[5:].split("/", 1)
+        blobstore = S3BlobStore(bucket_name)
+    elif url.startswith("gs://"):
+        bucket_name, pfx = url[5:].split("/", 1)
+        blobstore = GSBlobStore(bucket_name)
+    else:
+        pfx = os.path.realpath(os.path.normpath(url.strip(os.path.sep)))
+        blobstore = LocalBlobStore("/")
+    return pfx, blobstore
+
+def listing_for_url(url: str) -> Tuple[str, Union[Generator[S3Blob, None, None],
+                                                  Generator[GSBlob, None, None],
+                                                  Generator[LocalBlob, None, None]]]:
+    assert url
+    listing: Union[Generator[S3Blob, None, None],
+                   Generator[GSBlob, None, None],
+                   Generator[LocalBlob, None, None]]
+    if url.startswith("s3://"):
+        bucket_name, pfx = url[5:].split("/", 1)
+        listing = S3BlobStore(bucket_name).list(pfx.strip("/"))
+    elif url.startswith("gs://"):
+        bucket_name, pfx = url[5:].split("/", 1)
+        listing = GSBlobStore(bucket_name).list(pfx.strip("/"))
+    else:
+        pfx = os.path.realpath(os.path.normpath(url)).strip("/")
+        listing = LocalBlobStore("/").list(pfx)
+    return pfx, listing
