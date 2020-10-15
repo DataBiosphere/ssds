@@ -32,8 +32,11 @@ def upload(args: argparse.Namespace):
     Existing files in the submission will be overwritten.
     """
     ssds = Staging[args.deployment].ssds
+    count = 0
     for ssds_key in ssds.upload(args.path, args.submission_id, args.name, subdir=args.subdir):
-        pass
+        count += 1
+    if not count:
+        raise ValueError(f"No objects found for '{args.path}'")
 
 @staging_cli.command("copy", arguments={
     "--submission-id": dict(type=str, required=True, help="Submission id provided for your submission"),
