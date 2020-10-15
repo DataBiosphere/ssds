@@ -73,8 +73,9 @@ class LocalBlob(Blob):
         if self.url != src_blob.url:
             shutil.copyfile(src_blob._path, self._path)
 
-    @catch_blob_not_found
     def download(self, path: str):
+        if not os.path.isfile(self._path):
+            raise BlobNotFoundError(f"Could not find {self.key}")
         if self.url != path:
             shutil.copyfile(self._path, path)
 
