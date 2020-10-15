@@ -1,6 +1,7 @@
 """
 Low level cloud agnostic storage API
 """
+import os
 import logging
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 
@@ -71,6 +72,10 @@ class CopyClient:
             self._async_set.put(self._finalize_copy, src_blob, dst_blob, tags)
 
     def _download(self, src_blob: AnyBlob, dst_blob: LocalBlob):
+        dirname = os.path.dirname(dst_blob.url)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
+
         def do_download():
             src_blob.download(dst_blob.url)
             self._finalize_copy(src_blob, dst_blob)
