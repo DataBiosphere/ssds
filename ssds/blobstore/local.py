@@ -14,7 +14,7 @@ def catch_blob_not_found(func):
         try:
             return func(self, *args, **kwargs)
         except FileNotFoundError as ex:
-            raise BlobNotFoundError(f"Could not find {self.key}") from ex
+            raise BlobNotFoundError(f"Could not find {self.url}") from ex
     return wrapper
 
 class LocalBlobStore(BlobStore):
@@ -75,7 +75,7 @@ class LocalBlob(Blob):
 
     def download(self, path: str):
         if not os.path.isfile(self._path):
-            raise BlobNotFoundError(f"Could not find {self.key}")
+            raise BlobNotFoundError(f"Could not find {self.url}")
         if self.url != path:
             shutil.copyfile(self._path, path)
 
