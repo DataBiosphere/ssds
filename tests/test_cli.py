@@ -14,10 +14,17 @@ from ssds import deployment
 class TestStagingCLI(unittest.TestCase):
     def test_upload(self):
         mock_staging = MagicMock()
-        mock_staging.upload = MagicMock()
-        with patch("ssds.deployment.Staging.ssds", mock_staging):
-            args = Namespace(submission_id="foo", name="bar", path="asf", deployment="default", subdir="")
-            staging_cli.upload(args)
+        mock_staging.upload = MagicMock(return_value=["a", "b", "c"])
+        with self.subTest("should work"):
+            with patch("ssds.deployment.Staging.ssds", mock_staging):
+                args = Namespace(submission_id="foo", name="bar", path="asf", deployment="default", subdir="")
+                staging_cli.upload(args)
+        mock_staging.upload = MagicMock(return_value=[])
+        with self.subTest("should raise for empty upload"):
+            with patch("ssds.deployment.Staging.ssds", mock_staging):
+                args = Namespace(submission_id="foo", name="bar", path="asf", deployment="default", subdir="")
+                with self.assertRaises(ValueError):
+                    staging_cli.upload(args)
             # TODO: Fix this test
             # expected_path = os.path.abspath(os.path.normpath(args.path))
             # expected_args = (expected_path, "foo", "bar")
