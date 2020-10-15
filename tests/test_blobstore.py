@@ -82,6 +82,10 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
             with self.subTest("blob not found", blobstore=bs):
                 with self.assertRaises(BlobNotFoundError):
                     bs.blob(f"{uuid4()}").download(dst_path)
+            dst_subdir_path = local_blobstore.blob(os.path.join(f"{uuid4()}", "subdirs", "dont", "exist", "foo")).url
+            with self.subTest("Subdirectories don't exist", blobstore=bs):
+                with self.assertRaises(FileNotFoundError):
+                    bs.blob(src_key).download(dst_subdir_path)
 
     def test_size(self):
         key = f"{uuid4()}"
