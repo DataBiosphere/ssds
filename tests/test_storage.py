@@ -79,7 +79,7 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                 for dst_bs in dst_blobstores:
                     for data_bundle in (oneshot, multipart):
                         src_blob = src_bs.blob(data_bundle['key'])
-                        dst_blob = dst_bs.blob(f"{uuid4()}")
+                        dst_blob = dst_bs.blob(os.path.join(f"{uuid4()}", f"{uuid4()}"))
                         if compute_checksums:
                             client.copy_compute_checksums(src_blob, dst_blob)
                         else:
