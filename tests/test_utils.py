@@ -2,11 +2,12 @@
 import os
 import sys
 import unittest
+from datetime import datetime
 
 pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noqa
 sys.path.insert(0, pkg_root)  # noqa
 
-from ssds.utils import retry
+from ssds.utils import retry, timestamp, timestamp_now, datetime_from_timestamp
 
 
 class TestUtils(unittest.TestCase):
@@ -24,6 +25,11 @@ class TestUtils(unittest.TestCase):
                 my_func()
             self.assertEqual(count['count'], expected_attempts)
 
+    def test_timestamps(self):
+        dt = datetime.utcnow()
+        ts = timestamp(dt)
+        self.assertEqual(datetime_from_timestamp(ts), dt)
+        timestamp_now()
 
 if __name__ == '__main__':
     unittest.main()
