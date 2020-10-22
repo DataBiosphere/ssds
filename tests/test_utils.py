@@ -29,7 +29,8 @@ class TestUtils(unittest.TestCase):
         dt = datetime.utcnow()
         ts = timestamp(dt)
         self.assertEqual(datetime_from_timestamp(ts), dt)
-        timestamp_now()
+        dt_now = datetime_from_timestamp(timestamp_now())
+        self.assertGreater(dt_now, dt)
 
 if __name__ == '__main__':
     unittest.main()
