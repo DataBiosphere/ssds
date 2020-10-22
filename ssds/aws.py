@@ -31,3 +31,7 @@ def get_session():
 
 def _boto_config():
     return config.Config(max_pool_connections=MAX_RPC_CONCURRENCY + MAX_PASSTHROUGH_CONCURRENCY)
+
+@lru_cache()
+def get_identity():
+    return client("sts").get_caller_identity()['UserId']
