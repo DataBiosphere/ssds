@@ -6,7 +6,7 @@ import gs_chunked_io as gscio
 from google.cloud.storage import Blob as GSNativeBlob, Bucket as GSNativeBucket
 from google.api_core import exceptions as gcp_exceptions
 
-from ssds import gcp, concurrency
+from ssds import gcp, concurrency, utils
 from ssds.blobstore import (BlobStore, Blob, AsyncPartIterator, Part, MultipartWriter, get_s3_multipart_chunk_size,
                             BlobNotFoundError, BlobStoreUnknownError)
 
@@ -57,6 +57,7 @@ class GSBlob(Blob):
     def _get_native_blob(self) -> GSNativeBlob:
         return _get_native_blob(self._gs_bucket, self.key)
 
+    @utils.retry(gcp_exceptions.ServiceUnavailable, gcp_exceptions.NotFound)
     def put_tags(self, tags: Dict[str, str]):
         blob = self._get_native_blob()
         blob.metadata = tags
