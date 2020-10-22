@@ -120,5 +120,16 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
         dst_key = storage.transform_key(src_key, src_pfx, dst_pfx)
         self.assertEqual("bro/what/george/or/other/to/what.txt", dst_key)
 
+    def test_parse_cloud_url(self):
+        url = "gs://gobble/axe"
+        self.assertEqual(("gobble", "axe"), storage.parse_cloud_url(url))
+
+        url = "s3://turkey/dinner/with/stuffing"
+        self.assertEqual(("turkey", "dinner/with/stuffing"), storage.parse_cloud_url(url))
+
+        url = "this isn't valid"
+        with self.assertRaises(ValueError):
+            storage.parse_cloud_url(url)
+
 if __name__ == '__main__':
     unittest.main()

@@ -195,14 +195,21 @@ def transform_key(src_key: str, src_pfx: str, dst_pfx: str) -> str:
     dst_key = src_key.replace(src_pfx.strip("/"), dst_pfx.strip("/"), 1)
     return dst_key
 
+def parse_cloud_url(url: str) -> Tuple[str, str]:
+    if url.startswith("s3://") or url.startswith("gs://"):
+        bucket_name, key = url[5:].split("/", 1)
+        return bucket_name, key
+    else:
+        raise ValueError(f"Expected either 'gs://' or 's3://' url, got '{url}'")
+
 def blob_for_url(url: str) -> AnyBlob:
     assert url
     blob: AnyBlob
     if url.startswith("s3://"):
-        bucket_name, key = url[5:].split("/", 1)
+        bucket_name, key = parse_cloud_url(url)
         blob = S3Blob(bucket_name, key)
     elif url.startswith("gs://"):
-        bucket_name, key = url[5:].split("/", 1)
+        bucket_name, key = parse_cloud_url(url)
         blob = GSBlob(bucket_name, key)
     else:
         blob = LocalBlob("/", os.path.realpath(os.path.normpath(url)))
@@ -214,10 +221,10 @@ def blobstore_for_url(url: str) -> Tuple[str, AnyBlobStore]:
     """
     blobstore: AnyBlobStore
     if url.startswith("s3://"):
-        bucket_name, pfx = url[5:].split("/", 1)
+        bucket_name, pfx = parse_cloud_url(url)
         blobstore = S3BlobStore(bucket_name)
     elif url.startswith("gs://"):
-        bucket_name, pfx = url[5:].split("/", 1)
+        bucket_name, pfx = parse_cloud_url(url)
         blobstore = GSBlobStore(bucket_name)
     else:
         pfx = os.path.realpath(os.path.normpath(url.strip(os.path.sep)))
@@ -232,10 +239,10 @@ def listing_for_url(url: str) -> Tuple[str, Union[Generator[S3Blob, None, None],
                    Generator[GSBlob, None, None],
                    Generator[LocalBlob, None, None]]
     if url.startswith("s3://"):
-        bucket_name, pfx = url[5:].split("/", 1)
+        bucket_name, pfx = parse_cloud_url(url)
         listing = S3BlobStore(bucket_name).list(pfx.strip("/"))
     elif url.startswith("gs://"):
-        bucket_name, pfx = url[5:].split("/", 1)
+        bucket_name, pfx = parse_cloud_url(url)
         listing = GSBlobStore(bucket_name).list(pfx.strip("/"))
     else:
         pfx = os.path.realpath(os.path.normpath(url)).strip("/")
