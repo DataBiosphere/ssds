@@ -1,9 +1,10 @@
 import os
 import sys
+import json
 import logging
-from typing import Generator, Optional, Tuple, Type, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Type, Union
 
-from ssds import storage
+from ssds import storage, aws, gcp, utils
 from ssds.blobstore import BlobStore
 from ssds.blobstore.s3 import S3Blob, S3BlobStore
 from ssds.blobstore.gs import GSBlob, GSBlobStore
@@ -20,6 +21,7 @@ class SSDS:
     blobstore_class: Type[BlobStore]
     bucket: str
     prefix = "submissions"
+    release_prefix = "working"
     _name_delimeter = "--"  # Not using "/" as name delimeter produces friendlier `aws s3` listing
 
     def __init__(self, google_billing_project: Optional[str]=None):
@@ -154,3 +156,44 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
                 f"submission_id='{submission_id}' "
                 f"src='{src}' "
                 f"dst='{dst}'")
+
+def release(submission_id: str, src: SSDS, dst: SSDS, transfers: List[Tuple[str, str]]) -> dict:
+    # verify transfers
+    dst_keys = set()
+    src_keys = set()
+    for src_url, dst_url in transfers:
+        src_bucket, src_key = storage.parse_cloud_url(src_url)
+        dst_bucket, dst_key = storage.parse_cloud_url(dst_url)
+        assert src_bucket == src.bucket, f"Source keys must be from bucket {src.bucket}"
+        assert dst_bucket == dst.bucket, f"Destination keys must be from bucket {dst.bucket}"
+        assert src_key not in src_keys, "Duplicate source keys not allowed"
+        assert dst_key not in dst_keys, "Duplicate destination keys not allowed"
+        assert src_key.startswith(f"submissions/{submission_id}"), f"Source keys must be in submission {submission_id}"
+        assert dst_key.startswith(f"{src.release_prefix}/"), \
+               f"Destination keys must be placed into the prefix '{src.release_prefix}/'"
+        src_keys.add(src_key)
+        dst_keys.add(dst_key)
+
+    manifest: Dict[str, Any] = dict(submission_id=submission_id,
+                                    src_bucket=src.bucket,
+                                    dst_bucket=dst.bucket,
+                                    aws_identity=aws.get_identity(),
+                                    gcp_identity=gcp.get_identity(),
+                                    transfer_map=list())
+
+    # perform transfer and write manifest
+    manifest['start_timestamp'] = utils.timestamp_now()
+    with storage.CopyClient() as cc:
+        for src_url, dst_url in transfers:
+            src_blob = storage.blob_for_url(src_url)
+            dst_blob = storage.blob_for_url(dst_url)
+            if not is_synced(src_blob, dst_blob):
+                cc.copy(src_blob, dst_blob)
+    for src_blob, dst_blob, exception in cc.completed():
+        if exception is None:
+            manifest['transfer_map'].append(dict(src_key=src_blob.key, dst_key=dst_blob.key))
+    manifest['end_timestamp'] = utils.timestamp_now()
+    key = f"release-transfer-manifests/{submission_id}/transfer.{manifest['start_timestamp']}"
+    if 0 < len(manifest['transfer_map']):
+        src.blobstore.blob(key).put(json.dumps(manifest).encode("utf-8"))
+    return manifest
