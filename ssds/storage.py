@@ -3,7 +3,8 @@ Low level cloud agnostic storage API
 """
 import os
 import logging
-from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
+import traceback
+from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union, Callable
 
 from ssds import checksum
 from ssds.blobstore import get_s3_multipart_chunk_size, Blob
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 AnyBlobStore = Union[LocalBlobStore, S3BlobStore, GSBlobStore]
 AnyBlob = Union[LocalBlob, S3Blob, GSBlob]
 CloudBlob = Union[S3Blob, GSBlob]
+_CopyMethod = Callable[..., Optional[Dict[str, str]]]
 
 class SSDSObjectTag:
     SSDS_MD5 = "SSDS_MD5"
@@ -36,7 +38,7 @@ class CopyClient:
     def __init__(self, ignore_missing_checksums: bool=False):
         self._ignore_missing_checksums = ignore_missing_checksums
         self._async_set = async_set(10)
-        self._completed_keys: Set[str] = set()
+        self._completed: Set[Tuple[AnyBlob, AnyBlob, Optional[Exception]]] = set()
 
     def copy(self, src_blob: AnyBlob, dst_blob: AnyBlob):
         """
@@ -60,66 +62,57 @@ class CopyClient:
         Copy from `src_blob` to `dst_blob`, computing checksums
         This always causes data to pass through the executing instance.
         """
-        def _do_oneshot_copy():
-            tags = copy_oneshot_passthrough(src_blob, dst_blob, compute_checksums=True)
-            self._finalize_copy(src_blob, dst_blob, tags)
-
         size = src_blob.size()
         if size <= get_s3_multipart_chunk_size(size):
-            self._async_set.put(_do_oneshot_copy)
+            self._do_copy_async(copy_oneshot_passthrough, src_blob, dst_blob, compute_checksums=True)
         else:
-            tags = copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=True)
-            self._async_set.put(self._finalize_copy, src_blob, dst_blob, tags)
+            self._do_copy(copy_multipart_passthrough, src_blob, dst_blob, compute_checksums=True)
 
     def _download(self, src_blob: AnyBlob, dst_blob: LocalBlob):
         dirname = os.path.dirname(dst_blob.url)
         if dirname:
             os.makedirs(dirname, exist_ok=True)
-
-        def do_download():
-            src_blob.download(dst_blob.url)
-            self._finalize_copy(src_blob, dst_blob)
-
-        self._async_set.put(do_download)
+        self._do_copy_async(_copy_to_local, src_blob, dst_blob)
 
     def _copy_intra_cloud(self, src_blob: AnyBlob, dst_blob: AnyBlob):
-        assert isinstance(src_blob, type(dst_blob))
-
-        def do_oneshot_copy():
-            dst_blob.copy_from(src_blob)  # type: ignore
-            self._finalize_copy(src_blob, dst_blob)
-
         if dst_blob.copy_from_is_multipart(src_blob):  # type: ignore
-            dst_blob.copy_from(src_blob)  # type: ignore
-            self._async_set.put(self._finalize_copy, src_blob, dst_blob)
+            self._do_copy(_copy_intra_cloud, src_blob, dst_blob)
         else:
-            self._async_set.put(do_oneshot_copy)
+            self._do_copy_async(_copy_intra_cloud, src_blob, dst_blob)
 
     def _copy_oneshot(self, src_blob: AnyBlob, dst_blob: CloudBlob):
-        assert not isinstance(src_blob, type(dst_blob))
-
-        def do_copy():
-            tags = copy_oneshot_passthrough(src_blob, dst_blob, compute_checksums=isinstance(src_blob, LocalBlob))
-            self._finalize_copy(src_blob, dst_blob, tags)
-
-        self._async_set.put(do_copy)
+        self._do_copy_async(copy_oneshot_passthrough,
+                            src_blob,
+                            dst_blob,
+                            compute_checksums=isinstance(src_blob, LocalBlob))
 
     def _copy_multipart(self, src_blob: AnyBlob, dst_blob: CloudBlob):
-        assert not isinstance(src_blob, type(dst_blob))
-        tags = copy_multipart_passthrough(src_blob, dst_blob, compute_checksums=isinstance(src_blob, LocalBlob))
-        self._async_set.put(self._finalize_copy, src_blob, dst_blob, tags)
+        self._do_copy(copy_multipart_passthrough,
+                      src_blob,
+                      dst_blob,
+                      compute_checksums=isinstance(src_blob, LocalBlob))
 
-    def _finalize_copy(self, src_blob: AnyBlob, dst_blob: AnyBlob, tags: Optional[dict]=None):
-        if not isinstance(dst_blob, LocalBlob):
-            tags = tags or src_blob.get_tags()
-            verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
-            dst_blob.put_tags(tags)
-        self._completed_keys.add(dst_blob.key)
-        logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+    def _do_copy(self, copy_func: _CopyMethod, src_blob: AnyBlob, dst_blob: AnyBlob, *args, **kwargs):
+        try:
+            tags = copy_func(src_blob, dst_blob, *args, **kwargs)
+            if not isinstance(dst_blob, LocalBlob):
+                tags = tags or src_blob.get_tags()
+                verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
+                dst_blob.put_tags(tags)
+            self._completed.add((src_blob, dst_blob, None))
+            logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+        except Exception as exception:
+            self._completed.add((src_blob, dst_blob, exception))
+            logger.error(f"Failed to copy {src_blob.url} to {dst_blob.url}"
+                         f"{os.linesep}{traceback.format_exc()}")
 
-    def completed(self) -> Generator[str, None, None]:
-        while self._completed_keys:
-            yield self._completed_keys.pop()
+    def _do_copy_async(self, copy_func: _CopyMethod, src_blob: AnyBlob, dst_blob: AnyBlob, *args, **kwargs):
+        self._async_set.put(self._do_copy, copy_func, src_blob, dst_blob, *args, **kwargs)
+
+    def completed(self) -> Generator[Tuple[AnyBlob, AnyBlob, Optional[Exception]], None, None]:
+        while self._completed:
+            src_blob, dst_blob, exception = self._completed.pop()
+            yield src_blob, dst_blob, exception
 
     def __enter__(self):
         return self
@@ -127,6 +120,15 @@ class CopyClient:
     def __exit__(self, *args, **kwargs):
         for _ in self._async_set.consume():
             pass
+
+def _copy_to_local(src_blob: AnyBlob, dst_blob: LocalBlob) -> Dict[str, str]:
+    src_blob.download(dst_blob.url)
+    return dict()  # return empty tags for downloads
+
+def _copy_intra_cloud(src_blob: AnyBlob, dst_blob: AnyBlob) -> Dict[str, str]:
+    assert isinstance(src_blob, type(dst_blob))
+    dst_blob.copy_from(src_blob)  # type: ignore
+    return src_blob.get_tags()
 
 def verify_checksums(src_url: str,
                      dst_blob: CloudBlob,

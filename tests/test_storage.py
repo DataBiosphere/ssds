@@ -51,12 +51,12 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                 with self.subTest(blob.url):
                     self.assertEqual(blob.get(), expected_data)
 
-        # Cloud tests data is not tagged with checksums. This should raise.
-        with self.subTest("should raise"):
-            with self.assertRaises(storage.SSDSCopyError):
-                self._do_blobstore_copies((s3_blobstore, gs_blobstore),
-                                          (s3_blobstore, gs_blobstore),
-                                          ignore_missing_checksums=False)
+        # Cloud tests data is not tagged with checksums. All copies should fail.
+        with self.subTest("Copies should fail"):
+            _, completed_keys = self._do_blobstore_copies((s3_blobstore, gs_blobstore),
+                                                          (s3_blobstore, gs_blobstore),
+                                                          ignore_missing_checksums=False)
+            self.assertEqual(0, len(completed_keys))
 
     def test_copy_client_compute_checksums(self):
         expected_data_map, completed_keys = self._do_blobstore_copies((local_blobstore, s3_blobstore, gs_blobstore),
@@ -72,12 +72,12 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                              dst_blobstores=(local_blobstore, s3_blobstore, gs_blobstore),
                              ignore_missing_checksums=True,
                              compute_checksums=False):
-        oneshot, multipart = test_data.uploaded([local_blobstore, s3_blobstore, gs_blobstore])
+        oneshot, _ = test_data.uploaded(src_blobstores)
         expected_data_map = dict()
         with storage.CopyClient(ignore_missing_checksums=ignore_missing_checksums) as client:
             for src_bs in src_blobstores:
                 for dst_bs in dst_blobstores:
-                    for data_bundle in (oneshot, multipart):
+                    for data_bundle in (oneshot,):
                         src_blob = src_bs.blob(data_bundle['key'])
                         dst_blob = dst_bs.blob(os.path.join(f"{uuid4()}", f"{uuid4()}"))
                         if compute_checksums:
@@ -85,7 +85,8 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                         else:
                             client.copy(src_blob, dst_blob)
                         expected_data_map[dst_blob] = data_bundle['data']
-        return expected_data_map, [key for key in client.completed()]
+        return expected_data_map, [dst_blob.key for src_blob, dst_blob, exc in client.completed()
+                                   if exc is None]
 
     def test_verify_checksums(self):
         tests = [(S3Blob, storage.SSDSObjectTag.SSDS_MD5),
