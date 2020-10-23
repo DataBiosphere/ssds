@@ -86,10 +86,12 @@ class SSDS:
                 ssds_key = self._compose_ssds_key(submission_id, name, path)
                 dst_blob = self.blobstore.blob(f"{self.prefix}/{ssds_key}")
                 cc.copy_compute_checksums(src_blob, dst_blob)
-                for key in cc.completed():
-                    yield key[len(f"{self.prefix}/"):]
-        for key in cc.completed():
-            yield key[len(f"{self.prefix}/"):]
+                for src_blob, dst_blob, exception in cc.completed():
+                    if exception is None:
+                        yield dst_blob.key[len(f"{self.prefix}/"):]
+        for src_blob, dst_blob, exception in cc.completed():
+            if exception is None:
+                yield dst_blob.key[len(f"{self.prefix}/"):]
         logger.info(f"Completed upload: src_url='{src_url}' "
                     f"submission_id='{submission_id}' "
                     f"name='{name}' "
@@ -144,10 +146,12 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
             else:
                 logger.info(f"syncing {src_blob.key} from {src} to {dst}")
                 cc.copy(src_blob, dst_blob)
-            for key in cc.completed():
-                yield key
-    for key in cc.completed():
-        yield key
+            for src_blob, dst_blob, exception in cc.completed():
+                if exception is None:
+                    yield dst_blob.key
+    for src_blob, dst_blob, exception in cc.completed():
+        if exception is None:
+            yield dst_blob.key
     logger.info(f"Completed sync: "
                 f"submission_id='{submission_id}' "
                 f"src='{src}' "
