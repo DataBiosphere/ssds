@@ -72,7 +72,7 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                              dst_blobstores=(local_blobstore, s3_blobstore, gs_blobstore),
                              ignore_missing_checksums=True,
                              compute_checksums=False):
-        oneshot, multipart = test_data.uploaded(src_blobstores)
+        oneshot, _ = test_data.uploaded(src_blobstores)
         expected_data_map = dict()
         with storage.CopyClient(ignore_missing_checksums=ignore_missing_checksums) as client:
             for src_bs in src_blobstores:

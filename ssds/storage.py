@@ -72,7 +72,7 @@ class CopyClient:
         dirname = os.path.dirname(dst_blob.url)
         if dirname:
             os.makedirs(dirname, exist_ok=True)
-        self._do_copy_async(_download_to, src_blob, dst_blob)
+        self._do_copy_async(_copy_to_local, src_blob, dst_blob)
 
     def _copy_intra_cloud(self, src_blob: AnyBlob, dst_blob: AnyBlob):
         if dst_blob.copy_from_is_multipart(src_blob):  # type: ignore
@@ -92,25 +92,22 @@ class CopyClient:
                       dst_blob,
                       compute_checksums=isinstance(src_blob, LocalBlob))
 
-    def _do_copy_async(self, copy_func: _CopyMethod, src_blob: AnyBlob, dst_blob: AnyBlob, *args, **kwargs):
-        self._async_set.put(self._do_copy, copy_func, src_blob, dst_blob, *args, **kwargs)
-
     def _do_copy(self, copy_func: _CopyMethod, src_blob: AnyBlob, dst_blob: AnyBlob, *args, **kwargs):
         try:
             tags = copy_func(src_blob, dst_blob, *args, **kwargs)
-            self._finalize_copy(src_blob, dst_blob, tags)
+            if not isinstance(dst_blob, LocalBlob):
+                tags = tags or src_blob.get_tags()
+                verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
+                dst_blob.put_tags(tags)
+            self._completed.add((src_blob, dst_blob, None))
+            logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
         except Exception as exception:
             self._completed.add((src_blob, dst_blob, exception))
             logger.error(f"Failed to copy {src_blob.url} to {dst_blob.url}"
                          f"{os.linesep}{traceback.format_exc()}")
 
-    def _finalize_copy(self, src_blob: AnyBlob, dst_blob: AnyBlob, tags: Optional[dict]=None):
-        if not isinstance(dst_blob, LocalBlob):
-            tags = tags or src_blob.get_tags()
-            verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
-            dst_blob.put_tags(tags)
-        self._completed.add((src_blob, dst_blob, None))
-        logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
+    def _do_copy_async(self, copy_func: _CopyMethod, src_blob: AnyBlob, dst_blob: AnyBlob, *args, **kwargs):
+        self._async_set.put(self._do_copy, copy_func, src_blob, dst_blob, *args, **kwargs)
 
     def completed(self) -> Generator[Tuple[AnyBlob, AnyBlob, Optional[Exception]], None, None]:
         while self._completed:
@@ -124,9 +121,9 @@ class CopyClient:
         for _ in self._async_set.consume():
             pass
 
-def _download_to(src_blob: AnyBlob, dst_blob: LocalBlob) -> Dict[str, str]:
+def _copy_to_local(src_blob: AnyBlob, dst_blob: LocalBlob) -> Dict[str, str]:
     src_blob.download(dst_blob.url)
-    return dict()
+    return dict()  # return empty tags for downloads
 
 def _copy_intra_cloud(src_blob: AnyBlob, dst_blob: AnyBlob) -> Dict[str, str]:
     assert isinstance(src_blob, type(dst_blob))
