@@ -3,6 +3,7 @@ Upload, sync, and query staging area
 """
 import os
 import sys
+import json
 import logging
 import argparse
 
@@ -93,6 +94,16 @@ def get_bucket(args: argparse.Namespace):
     ssds = Staging[args.deployment].ssds
     print(f"{ssds.blobstore.schema}{ssds.bucket}")
 
-@staging_cli.command("release")
+@staging_cli.command("release", arguments={
+    "--submission-id": dict(type=str, required=True, help="id of submission"),
+    "--transfer-csv": dict(type=str, required=True, help="filepath of release manifest"),
+})
 def release(args: argparse.Namespace):
-    raise NotImplementedError()
+    ds = Staging[args.deployment].ssds
+    transfers = []
+    with open(args.transfer_csv) as fh:
+        for line in fh:
+            from_url, to_url = line.strip().split(",")
+            transfers.append((from_url, to_url))
+    manifest = ssds.release(args.submission_id, ds, ds, transfers)
+    print(json.dumps(manifest, indent=2))

@@ -3,6 +3,7 @@ import io
 import os
 import sys
 import time
+import json
 import logging
 import unittest
 import tempfile
@@ -192,6 +193,42 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                 with self.subTest("test no resync"):
                     synced_keys = [key for key in ssds.sync(submission_id, src, dst) if key]
                     self.assertEqual(synced_keys, list())
+
+    def test_release(self):
+        for src in (S3_SSDS, GS_SSDS):
+            submission_id = f"{uuid4()}"
+            submission_name = "this_is_a_test_submission_for_release"
+            uploaded_keys = [ssds_key for ssds_key in src.upload(self.testdir,
+                                                                 submission_id,
+                                                                 submission_name)]
+            fake_key = f"{submission_id}--{submission_name}/does-not-exit"
+            uploaded_keys.extend([fake_key])
+            for dst in (S3_SSDS, GS_SSDS):
+                with self.subTest(src=src, dst=dst):
+                    transfers = list()
+                    for ssds_key in uploaded_keys:
+                        src_url = src.compose_blobstore_url(ssds_key)
+                        dst_url = f"{dst.blobstore.schema}{dst.bucket}/working/{uuid4()}"
+                        transfers.append((src_url, dst_url))
+                    with self.assertRaises(AssertionError):
+                        manifest = ssds.release(f"this-does-not-exist-{uuid4()}", src, dst, transfers)
+                    manifest = ssds.release(submission_id, src, dst, transfers)
+                    ssds_key = src._compose_ssds_key(submission_id,
+                                                     submission_name,
+                                                     f"release-transfer-manifests/{manifest['start_timestamp']}")
+                    key = f"{src.prefix}/{ssds_key}"
+                    blob = src.blobstore.blob(key)
+                    self.assertTrue(blob.exists())
+                    self.assertEqual(manifest, json.loads(blob.get().decode("utf-8")))
+                    sources = set(m['src_key'] for m in manifest['transfer_map'])
+                    destinations = set(m['dst_key'] for m in manifest['transfer_map'])
+                    for src_url, dst_url in transfers:
+                        if fake_key not in src_url:
+                            src_blob = ssds.storage.blob_for_url(src_url)
+                            dst_blob = ssds.storage.blob_for_url(dst_url)
+                            self.assertEqual(src_blob.get(), dst_blob.get())
+                            self.assertIn(src_blob.key, sources)
+                            self.assertIn(dst_blob.key, destinations)
 
 if __name__ == '__main__':
     unittest.main()
