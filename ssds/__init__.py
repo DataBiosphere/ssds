@@ -118,10 +118,8 @@ class SSDS:
         return name
 
     def _compose_ssds_key(self, submission_id: str, submission_name: str, path: str) -> str:
-        path = path.strip("/")
-        dst_prefix = f"{submission_id}{self._name_delimeter}{submission_name}"
-        ssds_key = f"{dst_prefix}/{path}"
-        blobstore_key = f"{self.prefix}{ssds_key}"
+        ssds_key = f"{submission_id}{self._name_delimeter}{submission_name}/{path.strip('/')}"
+        blobstore_key = f"{self.prefix}/{ssds_key}"
         if MAX_KEY_LENGTH <= len(blobstore_key):
             raise ValueError(f"Total key length must not exceed {MAX_KEY_LENGTH} characters {os.linesep}"
                              f"{blobstore_key} is too long {os.linesep}"
