@@ -7,7 +7,7 @@ import traceback
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union, Callable
 
 from ssds import checksum
-from ssds.blobstore import get_s3_multipart_chunk_size, Blob
+from ssds.blobstore import get_s3_multipart_chunk_size, Blob, BlobNotFoundError
 from ssds.blobstore.s3 import S3BlobStore, S3Blob
 from ssds.blobstore.gs import GSBlobStore, GSBlob
 from ssds.blobstore.local import LocalBlobStore, LocalBlob
@@ -46,16 +46,20 @@ class CopyClient:
         This avoids data passthrough when possible, e.g. S3->S3 or GS->GS. For GS->GS copies, passthrough may be forced
         if the source bucket is requester pays. Checksums are computed for Local->Cloud copies.
         """
-        if isinstance(dst_blob, LocalBlob):
-            self._download(src_blob, dst_blob)
-        elif isinstance(src_blob, type(dst_blob)):
-            self._copy_intra_cloud(src_blob, dst_blob)
-        else:
-            size = src_blob.size()
-            if size <= get_s3_multipart_chunk_size(size):
-                self._copy_oneshot(src_blob, dst_blob)
+        if src_blob.exists():
+            if isinstance(dst_blob, LocalBlob):
+                self._download(src_blob, dst_blob)
+            elif isinstance(src_blob, type(dst_blob)):
+                self._copy_intra_cloud(src_blob, dst_blob)
             else:
-                self._copy_multipart(src_blob, dst_blob)
+                size = src_blob.size()
+                if size <= get_s3_multipart_chunk_size(size):
+                    self._copy_oneshot(src_blob, dst_blob)
+                else:
+                    self._copy_multipart(src_blob, dst_blob)
+        else:
+            logger.error(f"Failed to copy {src_blob.url} to {dst_blob.url}"
+                         f"{os.linesep}Source does not exist!")
 
     def copy_compute_checksums(self, src_blob: AnyBlob, dst_blob: CloudBlob):
         """
