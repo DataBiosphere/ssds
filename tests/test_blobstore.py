@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from math import ceil
 from uuid import uuid4
+from unittest import mock
 from random import randint
 from typing import Optional
 
@@ -54,6 +55,28 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                 bs.blob(key).delete()
                 with self.assertRaises(BlobNotFoundError):
                     bs.blob(key).get()
+
+    def test_copy_from_is_multipart(self):
+        oneshot, multipart = test_data.uploaded([local_blobstore, s3_blobstore, gs_blobstore])
+        for bs in (local_blobstore, s3_blobstore, gs_blobstore):
+            with self.subTest(blobstore=bs):
+                with self.assertRaises(BlobNotFoundError):
+                    non_existent_blob = bs.blob(f"{uuid4()}")
+                    bs.blob("some-dumb-bum").copy_from_is_multipart(non_existent_blob)
+                dst_blob = bs.blob(f"{uuid4()}")
+                if bs == s3_blobstore:
+                    self.assertFalse(dst_blob.copy_from_is_multipart(bs.blob(oneshot['key'])))
+                    self.assertTrue(dst_blob.copy_from_is_multipart(bs.blob(multipart['key'])))
+                elif bs in (gs_blobstore, local_blobstore):
+                    self.assertFalse(dst_blob.copy_from_is_multipart(bs.blob(oneshot['key'])))
+                    self.assertFalse(dst_blob.copy_from_is_multipart(bs.blob(multipart['key'])))
+        with self.subTest("GS requester pays special case"):
+            mock_gs_bucket = mock.MagicMock()
+            mock_gs_bucket.user_project = "doom"
+            with mock.patch("ssds.blobstore.gs._get_native_bucket", return_value=mock_gs_bucket):
+                dst_blob = bs.blob(f"{uuid4()}")
+                self.assertTrue(dst_blob.copy_from_is_multipart(bs.blob(oneshot['key'])))
+                self.assertTrue(dst_blob.copy_from_is_multipart(bs.blob(multipart['key'])))
 
     def test_copy_from(self):
         dst_key = f"{uuid4()}"

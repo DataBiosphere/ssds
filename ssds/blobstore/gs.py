@@ -81,7 +81,8 @@ class GSBlob(Blob):
         self._get_native_blob().delete()
 
     def copy_from_is_multipart(self, src_blob: "GSBlob") -> bool:
-        return src_blob._gs_bucket.user_project is not None
+        src_gs_blob = src_blob._get_native_blob()
+        return src_gs_blob.bucket.user_project is not None
 
     def copy_from(self, src_blob: "GSBlob"):
         """
