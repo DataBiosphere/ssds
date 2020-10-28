@@ -210,8 +210,13 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                         src_url = src.compose_blobstore_url(ssds_key)
                         dst_url = f"{dst.blobstore.schema}{dst.bucket}/working/{uuid4()}"
                         transfers.append((src_url, dst_url))
+                    with self.assertRaises(AssertionError):
+                        manifest = ssds.release(f"this-does-not-exist-{uuid4()}", src, dst, transfers)
                     manifest = ssds.release(submission_id, src, dst, transfers)
-                    key = f"release-transfer-manifests/{submission_id}/transfer.{manifest['start_timestamp']}"
+                    ssds_key = src._compose_ssds_key(submission_id,
+                                                     submission_name,
+                                                     f"release-transfer-manifests/{manifest['start_timestamp']}")
+                    key = f"{src.prefix}/{ssds_key}"
                     blob = src.blobstore.blob(key)
                     self.assertTrue(blob.exists())
                     self.assertEqual(manifest, json.loads(blob.get().decode("utf-8")))

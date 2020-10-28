@@ -159,6 +159,8 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
 
 def release(submission_id: str, src: SSDS, dst: SSDS, transfers: List[Tuple[str, str]]) -> dict:
     # verify transfers
+    submission_name = src.get_submission_name(submission_id)
+    assert submission_name is not None, f"No submission for {submission_id}"
     dst_keys = set()
     src_keys = set()
     for src_url, dst_url in transfers:
@@ -193,7 +195,10 @@ def release(submission_id: str, src: SSDS, dst: SSDS, transfers: List[Tuple[str,
         if exception is None:
             manifest['transfer_map'].append(dict(src_key=src_blob.key, dst_key=dst_blob.key))
     manifest['end_timestamp'] = utils.timestamp_now()
-    key = f"release-transfer-manifests/{submission_id}/transfer.{manifest['start_timestamp']}"
+    ssds_key = src._compose_ssds_key(submission_id,
+                                     submission_name,
+                                     f"release-transfer-manifests/{manifest['start_timestamp']}")
+    key = f"{src.prefix}/{ssds_key}"
     if 0 < len(manifest['transfer_map']):
         src.blobstore.blob(key).put(json.dumps(manifest).encode("utf-8"))
     return manifest
