@@ -46,6 +46,9 @@ class Blob:
         raise NotImplementedError()
 
     def copy_from_is_multipart(self, src_blob: Any) -> bool:
+        """
+        If `src_blob` does not exist, return `False`
+        """
         raise NotImplementedError()
 
     def copy_from(self, src_blob: Any):

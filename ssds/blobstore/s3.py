@@ -77,8 +77,11 @@ class S3Blob(Blob):
         self._s3_bucket.Object(self.key).delete()
 
     def copy_from_is_multipart(self, src_blob: "S3Blob") -> bool:
-        size = src_blob.size()
-        return size >= get_s3_multipart_chunk_size(size)
+        try:
+            size = src_blob.size()
+            return size >= get_s3_multipart_chunk_size(size)
+        except BlobNotFoundError:
+            return False
 
     def copy_from(self, src_blob: "S3Blob"):
         """
