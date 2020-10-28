@@ -64,11 +64,10 @@ class TestBlobStore(infra.SuppressWarningsMixin, unittest.TestCase):
                     non_existent_blob = bs.blob(f"{uuid4()}")
                     bs.blob("some-dumb-bum").copy_from_is_multipart(non_existent_blob)
                 dst_blob = bs.blob(f"{uuid4()}")
+                self.assertFalse(dst_blob.copy_from_is_multipart(bs.blob(oneshot['key'])))
                 if bs == s3_blobstore:
-                    self.assertFalse(dst_blob.copy_from_is_multipart(bs.blob(oneshot['key'])))
                     self.assertTrue(dst_blob.copy_from_is_multipart(bs.blob(multipart['key'])))
                 elif bs in (gs_blobstore, local_blobstore):
-                    self.assertFalse(dst_blob.copy_from_is_multipart(bs.blob(oneshot['key'])))
                     self.assertFalse(dst_blob.copy_from_is_multipart(bs.blob(multipart['key'])))
         with self.subTest("GS requester pays special case"):
             mock_gs_bucket = mock.MagicMock()
