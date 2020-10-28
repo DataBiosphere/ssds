@@ -62,7 +62,10 @@ class LocalBlob(Blob):
         os.remove(self._path)
 
     def copy_from_is_multipart(self, src_blob: "LocalBlob") -> bool:
-        return False
+        if src_blob.exists():
+            return False
+        else:
+            raise BlobNotFoundError()
 
     @catch_blob_not_found
     def copy_from(self, src_blob: "LocalBlob"):
