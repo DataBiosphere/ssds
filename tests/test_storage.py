@@ -3,6 +3,7 @@ import io
 import os
 import sys
 import time
+import gzip
 import logging
 import tempfile
 import unittest
@@ -57,6 +58,34 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                                                           (s3_blobstore, gs_blobstore),
                                                           ignore_missing_checksums=False)
             self.assertEqual(0, len(completed_keys))
+
+    def test_copy_client_gzip(self):
+        """
+        Under somewhat mysterious circumstances, S3 computes the Etag of gzipped objects using uncompressed contents.
+        This test verifies Etags are computed using binary data of source file (uncompressed contents).
+        """
+        src = self._get_problem_gzip_blob()
+        dst = s3_blobstore.blob(f"{uuid4()}")
+        with storage.CopyClient() as client:
+            client.copy_compute_checksums(src, dst)
+
+    def _get_problem_gzip_blob(self) -> S3Blob:
+        """
+        Grab a gzip file that has caused Etag errors in the past.
+        Cache it in S3 to avoid frequent downloads from NIH servers.
+        """
+        problem_gzip_blob = s3_blobstore.blob("gzip.fixture.gz")
+        if not problem_gzip_blob.exists():
+            from ftplib import FTP
+            ftp = FTP("ftp-trace.ncbi.nlm.nih.gov")
+            ftp.login(user="", passwd="")
+            ftp.cwd("ReferenceSamples/giab/data/ChineseTrio/HG006_NA24694-huCA017E_father/NA24694_Father_HiSeq100x/"
+                    "NA24694_Father_HiSeq100x_fastqs/141020_D00360_0062_AHB657ADXX/Sample_NA24694")
+            filename = "NA24694_GCCAAT_L002_R1_039.fastq.gz"
+            with io.BytesIO() as raw:
+                ftp.retrbinary("RETR " + filename, raw.write)
+                problem_gzip_blob.put(raw.getvalue())
+        return problem_gzip_blob
 
     def test_copy_client_compute_checksums(self):
         expected_data_map, completed_keys = self._do_blobstore_copies((local_blobstore, s3_blobstore, gs_blobstore),

@@ -69,8 +69,7 @@ class S3Blob(Blob):
             return fh.read()
 
     def put(self, data: bytes):
-        blob = self._s3_bucket.Object(self.key)
-        blob.upload_fileobj(io.BytesIO(data))
+        aws.client("s3").put_object(Bucket=self.bucket_name, Key=self.key, Body=data)
 
     @catch_blob_not_found
     def delete(self):
