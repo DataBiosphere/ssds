@@ -2,6 +2,7 @@
 Low level cloud agnostic storage API
 """
 import os
+import enum
 import logging
 import traceback
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union, Callable
@@ -25,14 +26,10 @@ class SSDSObjectTag:
     SSDS_MD5 = "SSDS_MD5"
     SSDS_CRC32C = "SSDS_CRC32C"
 
-class SSDSCopyError(Exception):
-    pass
-
-class SSDSMissingChecksum(SSDSCopyError):
-    pass
-
-class SSDSIncorrectChecksum(SSDSCopyError):
-    pass
+class SSDSChecksumStatus(enum.Enum):
+    ok = enum.auto()
+    missing = enum.auto()
+    incorrect = enum.auto()
 
 class CopyClient:
     def __init__(self, ignore_missing_checksums: bool=False):
@@ -101,7 +98,7 @@ class CopyClient:
             tags = copy_func(src_blob, dst_blob, *args, **kwargs)
             if not isinstance(dst_blob, LocalBlob):
                 tags = tags or src_blob.get_tags()
-                verify_checksums(src_blob.url, dst_blob, tags, self._ignore_missing_checksums)
+                verify_checksums(dst_blob, tags)
                 dst_blob.put_tags(tags)
             self._completed.add((src_blob, dst_blob, None))
             logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
@@ -117,6 +114,19 @@ class CopyClient:
         while self._completed:
             src_blob, dst_blob, exception = self._completed.pop()
             yield src_blob, dst_blob, exception
+
+    def _finalize_copy(self, src_blob: AnyBlob, dst_blob: AnyBlob, tags: Optional[dict]=None):
+        if not isinstance(dst_blob, LocalBlob):
+            tags = tags or src_blob.get_tags()
+            status, cs_tag = verify_checksums(dst_blob, tags)
+            if SSDSChecksumStatus.ok == status:
+                dst_blob.put_tags(tags)
+            elif self._ignore_missing_checksums:
+                logger.warning(f"{status.name} {cs_tag} for {src_blob.url} -> {dst_blob.url}")
+            else:
+                logger.error(f"{status.name} {cs_tag} for {src_blob.url} -> {dst_blob.url}")
+                dst_blob.delete()
+        logger.info(f"Copied {src_blob.url} to {dst_blob.url}")
 
     def __enter__(self):
         return self
@@ -134,23 +144,15 @@ def _copy_intra_cloud(src_blob: AnyBlob, dst_blob: AnyBlob) -> Dict[str, str]:
     dst_blob.copy_from(src_blob)  # type: ignore
     return src_blob.get_tags()
 
-def verify_checksums(src_url: str,
-                     dst_blob: CloudBlob,
-                     checksums: Dict[str, str],
-                     ignore_missing_checksums: bool=False):
-    checksum_checks = {S3Blob: ("S3 ETag", SSDSObjectTag.SSDS_MD5),
-                       GSBlob: ("GS crc32c", SSDSObjectTag.SSDS_CRC32C)}
-    if not isinstance(dst_blob, LocalBlob):
-        cs_name, cs_tag = checksum_checks[dst_blob.__class__]
-        if cs_tag in checksums:
-            if checksums[cs_tag] != dst_blob.cloud_native_checksum():
-                raise SSDSIncorrectChecksum(f"Incorrect {cs_name} for {src_url} -> {dst_blob.url}")
-        else:
-            msg = f"Missing {cs_tag} tag for {src_url}"
-            if ignore_missing_checksums:
-                logger.warning(msg)
-            else:
-                raise SSDSMissingChecksum(msg)
+_checks = {S3Blob: ("S3 ETag", SSDSObjectTag.SSDS_MD5), GSBlob: ("GS crc32c", SSDSObjectTag.SSDS_CRC32C)}
+def verify_checksums(dst_blob: CloudBlob, checksums: Dict[str, str]) -> Tuple[SSDSChecksumStatus, str]:
+    cs_name, cs_tag = _checks[dst_blob.__class__]
+    if cs_tag in checksums:
+        if checksums[cs_tag] != dst_blob.cloud_native_checksum():
+            return SSDSChecksumStatus.incorrect, cs_tag
+    else:
+        return SSDSChecksumStatus.missing, cs_tag
+    return SSDSChecksumStatus.ok, "all"
 
 def copy_oneshot_passthrough(src_blob: AnyBlob,
                              dst_blob: CloudBlob,

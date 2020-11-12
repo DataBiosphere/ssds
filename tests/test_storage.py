@@ -52,13 +52,6 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                 with self.subTest(blob.url):
                     self.assertEqual(blob.get(), expected_data)
 
-        # Cloud tests data is not tagged with checksums. All copies should fail.
-        with self.subTest("Copies should fail"):
-            _, completed_keys = self._do_blobstore_copies((s3_blobstore, gs_blobstore),
-                                                          (s3_blobstore, gs_blobstore),
-                                                          ignore_missing_checksums=False)
-            self.assertEqual(0, len(completed_keys))
-
     def test_copy_client_gzip(self):
         """
         Under somewhat mysterious circumstances, S3 computes the Etag of gzipped objects using uncompressed contents.
@@ -118,30 +111,24 @@ class TestStorage(infra.SuppressWarningsMixin, unittest.TestCase):
                                    if exc is None]
 
     def test_verify_checksums(self):
-        tests = [(S3Blob, storage.SSDSObjectTag.SSDS_MD5),
-                 (GSBlob, storage.SSDSObjectTag.SSDS_CRC32C)]
-        for blob_class, tag_key in tests:
-            with self.subTest(blob_class=blob_class):
-                checksums = {tag_key: f"{uuid4()}"}
+        for blob_class, tag_key in [(S3Blob, storage.SSDSObjectTag.SSDS_MD5),
+                                    (GSBlob, storage.SSDSObjectTag.SSDS_CRC32C)]:
+            dst_blob = mock.MagicMock(spec=blob_class)
+            tests = [({tag_key: "correct"}, "correct", storage.SSDSChecksumStatus.ok),
+                     ({tag_key: "wrong"}, "not-right!", storage.SSDSChecksumStatus.incorrect),
+                     ({}, "missing", storage.SSDSChecksumStatus.missing)]
+            for src_tags, dst_native_checksum, expected_status in tests:
+                with self.subTest(blob_class=blob_class, src_tags=src_tags, expected_status=expected_status):
+                    dst_blob.cloud_native_checksum = mock.MagicMock(return_value=dst_native_checksum)
+                    status, cs_tag = storage.verify_checksums(dst_blob, src_tags)
+                    self.assertEqual(expected_status, status)
+                    if status != storage.SSDSChecksumStatus.ok:
+                        self.assertEqual(cs_tag, tag_key)
 
-                dst_blob = mock.MagicMock(spec=blob_class)
-                with self.assertRaises(storage.SSDSIncorrectChecksum):
-                    storage.verify_checksums("test", dst_blob, checksums)
-
-                dst_blob.cloud_native_checksum = mock.MagicMock(return_value=checksums[tag_key])
-                storage.verify_checksums("test", dst_blob, checksums)
-
-                dst_blob = mock.MagicMock(spec=blob_class)
-                checksums = dict()
-                with self.assertRaises(storage.SSDSMissingChecksum):
-                    storage.verify_checksums("test", dst_blob, checksums)
-
-                dst_blob = mock.MagicMock(spec=blob_class)
-                checksums = dict()
-                storage.verify_checksums("test", dst_blob, checksums, ignore_missing_checksums=True)
-
-        dst_blob = mock.MagicMock(spec=LocalBlob)
-        storage.verify_checksums("test", dst_blob, checksums)
+        with self.subTest(blob_class=LocalBlob):
+            dst_blob = mock.MagicMock(spec=LocalBlob)
+            with self.assertRaises(KeyError):
+                storage.verify_checksums(dst_blob, {})
 
     def test_transform_key(self):
         src_key = "some/key/or/other/to/what.txt"
