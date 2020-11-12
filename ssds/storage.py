@@ -29,15 +29,6 @@ class SSDSChecksumStatus(enum.Enum):
     missing = enum.auto()
     incorrect = enum.auto()
 
-class SSDSCopyError(Exception):
-    pass
-
-class SSDSMissingChecksum(SSDSCopyError):
-    pass
-
-class SSDSIncorrectChecksum(SSDSCopyError):
-    pass
-
 class CopyClient:
     def __init__(self, ignore_missing_checksums: bool=False):
         self._ignore_missing_checksums = ignore_missing_checksums
