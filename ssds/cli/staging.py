@@ -97,6 +97,10 @@ def get_bucket(args: argparse.Namespace):
 @staging_cli.command("release", arguments={
     "--submission-id": dict(type=str, required=True, help="id of submission"),
     "--transfer-csv": dict(type=str, required=True, help="filepath of release manifest"),
+    "--google-billing-project": dict(type=str,
+                                     required=False,
+                                     default=None,
+                                     help="Google billing project. This can only be specified for GCP deployments."),
 })
 def release(args: argparse.Namespace):
     ds = Staging[args.deployment].ssds

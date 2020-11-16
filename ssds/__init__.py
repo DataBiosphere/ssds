@@ -157,7 +157,11 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
                 f"src='{src}' "
                 f"dst='{dst}'")
 
-def release(submission_id: str, src: SSDS, dst: SSDS, transfers: List[Tuple[str, str]]) -> dict:
+def release(submission_id: str,
+            src: SSDS,
+            dst: SSDS,
+            transfers: List[Tuple[str, str]],
+            google_billing_project: Optional[str]=None) -> dict:
     # verify transfers
     submission_name = src.get_submission_name(submission_id)
     assert submission_name is not None, f"No submission for {submission_id}"
