@@ -21,7 +21,6 @@ class SSDS:
     blobstore_class: Type[BlobStore]
     bucket: str
     prefix = "submissions"
-    release_prefix = "working"
     _name_delimeter = "--"  # Not using "/" as name delimeter produces friendlier `aws s3` listing
 
     def __init__(self, google_billing_project: Optional[str]=None):
@@ -171,8 +170,6 @@ def release(submission_id: str, src: SSDS, dst: SSDS, transfers: List[Tuple[str,
         assert src_key not in src_keys, "Duplicate source keys not allowed"
         assert dst_key not in dst_keys, "Duplicate destination keys not allowed"
         assert src_key.startswith(f"submissions/{submission_id}"), f"Source keys must be in submission {submission_id}"
-        assert dst_key.startswith(f"{src.release_prefix}/"), \
-               f"Destination keys must be placed into the prefix '{src.release_prefix}/'"
         src_keys.add(src_key)
         dst_keys.add(dst_key)
 
