@@ -9,27 +9,32 @@ All uploads are checksummed and verified. Multpart uploads use defined chunk siz
 ETags.
 
 # Installation
+
 ```
 pip install git+https://github.com/DataBiosphere/ssds
 ```
 
 # Usage
 Make a new submission
+
 ```
 ssds staging upload --submission-id my_submission_id --name my_cool_submission_name /local/path/to/my/submission
 ```
 
 Update an existing submission
+
 ```
 ssds staging upload --submission-id my_existing_submission_id /local/path/to/my/submission
 ```
 
 List all staging submissions
+
 ```
 ssds staging list
 ```
 
 List contents of a staging submission
+
 ```
 ssds staging list-submission --submission-id my_submission_id
 ```
@@ -37,17 +42,20 @@ ssds staging list-submission --submission-id my_submission_id
 The above commands can target staging deployments other than the default with the `--deployment` argument.
 
 Available deployments can be listed with
+
 ```
-	ssds deployment list-staging
+ssds deployment list-staging
 ```
+
 and
+
 ```
-	ssds deployment list-release
+ssds deployment list-release
 ```
 
 Submissions can be synced between staging deployments with
 ```
-	ssds staging sync --submission-id my_existing_submission_id --dst-deployment my_dst_deployment
+ssds staging sync --submission-id my_existing_submission_id --dst-deployment my_dst_deployment
 ```
 
 ## Configuring Billing Projects for Requester Pays Google Buckets
