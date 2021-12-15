@@ -63,7 +63,7 @@ ssds staging sync --submission-id my_existing_submission_id --dst-deployment my_
 For working with requester pays Google Storage buckets, the billing project is specified by setting the
 environment variable `GOOGLE_PROJECT`, e.g.
 ```
-export GOOGLE_PROJECT="my-gcp-billing-project
+export GOOGLE_PROJECT="my-gcp-billing-project"
 ```
 
 ## Links
