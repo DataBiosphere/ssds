@@ -3,7 +3,7 @@ import warnings
 import requests
 from functools import lru_cache
 from typing import Optional
-from requests.adapters import HTTPAdapter, DEFAULT_POOLSIZE
+from requests.adapters import HTTPAdapter
 
 import google.auth
 import google.auth.transport.requests

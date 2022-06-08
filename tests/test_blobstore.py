@@ -1,29 +1,23 @@
 #!/usr/bin/env python
-import io
 import os
 import sys
-import time
 import tempfile
 import unittest
 from math import ceil
 from uuid import uuid4
 from unittest import mock
 from random import randint
-from typing import Optional
-
-from google.cloud import storage
 
 pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noqa
 sys.path.insert(0, pkg_root)  # noqa
 
-from ssds import aws, checksum
+from ssds import checksum
 from ssds.blobstore import (AWS_MIN_CHUNK_SIZE, AWS_MAX_MULTIPART_COUNT, MiB, get_s3_multipart_chunk_size, Part,
                             BlobNotFoundError)
-from ssds.blobstore.s3 import S3BlobStore, S3AsyncPartIterator, S3MultipartWriter
-from ssds.blobstore.gs import GSBlobStore, GSAsyncPartIterator
+from ssds.blobstore.s3 import S3BlobStore
+from ssds.blobstore.gs import GSBlobStore
 from ssds.blobstore.local import LocalBlobStore
 from ssds.deployment import _S3StagingTest, _GSStagingTest
-from ssds import gcp
 from tests import infra, TestData
 
 
