@@ -35,9 +35,9 @@ class SSDS:
     def list(self) -> Generator[Tuple[str, str], None, None]:
         listing = self.blobstore.list(self.prefix)
         prev_submission_id = ""
-        for key in listing:
+        for blob in listing:
             try:
-                ssds_key = key.strip(f"{self.prefix}/")
+                ssds_key = blob.key.strip(f"{self.prefix}/")
                 submission_id, parts = ssds_key.split(self._name_delimeter, 1)
                 submission_name, _ = parts.split("/", 1)
             except ValueError:
