@@ -1,12 +1,8 @@
-import io
 import requests
 from math import ceil
 from functools import wraps
 from contextlib import closing
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any, List, Dict, Tuple, Optional, Union, Generator
-
-from gs_chunked_io.async_collections import AsyncSet
+from typing import Any, List, Dict, Tuple, Union, Generator
 
 import botocore.exceptions
 
