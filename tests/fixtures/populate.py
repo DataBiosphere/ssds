@@ -65,7 +65,7 @@ def _remote_key(d: str) -> str:
 
 @lru_cache()
 def _s3_bucket():
-    return aws.resource("s3").Bucket("org-hpp-ssds-upload-test")
+    return aws.resource("s3").Bucket("org-hpp-ssds-upload-test-platform-dev")
 
 @lru_cache()
 def _gs_bucket():

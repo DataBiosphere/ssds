@@ -18,7 +18,7 @@ class _GSStaging(SSDS):
 
 class _S3StagingTest(SSDS):
     blobstore_class = S3BlobStore
-    bucket = "org-hpp-ssds-staging-test"
+    bucket = "org-hpp-ssds-staging-test-platform-dev"
 
 class _GSStagingTest(SSDS):
     blobstore_class = GSBlobStore
