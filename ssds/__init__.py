@@ -1,8 +1,7 @@
 import os
-import sys
 import json
 import logging
-from typing import Any, Dict, Generator, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Type
 
 from ssds import storage, aws, gcp, utils
 from ssds.blobstore import BlobStore
@@ -65,6 +64,15 @@ class SSDS:
             name, _ = parts.split("/", 1)
             break
         return name
+
+    def get_full_prefix(self, submission_id: str) -> str:
+        try:
+            blob = next(self.blobstore.list(f"{self.prefix}/{submission_id}"))
+        except StopIteration:
+            raise ValueError(f'Nothing found for submission ID: {submission_id}')
+        ssds_key = blob.key.strip(f"{self.prefix}/")
+        name, _ = ssds_key.split("/", 1)
+        return f"{self.prefix}/{name}"
 
     def upload(self,
                src_url: str,
@@ -136,9 +144,14 @@ def is_synced(src_blob: storage.AnyBlob, dst_blob: storage.AnyBlob) -> bool:
     else:
         return False
 
-def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]:
+def sync(submission_id: str,
+         src: SSDS,
+         dst: SSDS,
+         subdir: Optional[str] = None) -> Generator[str, None, None]:
     with storage.CopyClient() as cc:
-        for src_blob in src.blobstore.list(f"{src.prefix}/{submission_id}"):
+        subdir = f"{subdir.strip('/')}" if subdir else ""
+        full_prefix = f'{src.get_full_prefix(submission_id)}/{subdir}'
+        for src_blob in src.blobstore.list(full_prefix):
             dst_blob = dst.blobstore.blob(src_blob.key)
             if is_synced(src_blob, dst_blob):
                 logger.info(f"already-synced {src_blob.key} from {src} to {dst}")
@@ -154,7 +167,8 @@ def sync(submission_id: str, src: SSDS, dst: SSDS) -> Generator[str, None, None]
     logger.info(f"Completed sync: "
                 f"submission_id='{submission_id}' "
                 f"src='{src}' "
-                f"dst='{dst}'")
+                f"dst='{dst}' "
+                f"subdir={subdir}")
 
 def release(submission_id: str, src: SSDS, dst: SSDS, transfers: List[Tuple[str, str]]) -> dict:
     # verify transfers
