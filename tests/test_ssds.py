@@ -184,15 +184,31 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                                                                      submission_name)]
                 synced_keys = [key[len(f"{src.prefix}/"):] for key in ssds.sync(submission_id, src, dst)]
                 dst_listed_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
-                self.assertEqual(sorted(uploaded_keys), sorted(synced_keys))
-                self.assertEqual(sorted(uploaded_keys), sorted(dst_listed_keys))
-                for ssds_key in dst_listed_keys:
-                    a = src.blobstore.blob(f"{S3_SSDS.prefix}/{ssds_key}").get()
-                    b = dst.blobstore.blob(f"{GS_SSDS.prefix}/{ssds_key}").get()
-                    self.assertEqual(a, b)
-                with self.subTest("test no resync"):
-                    synced_keys = [key for key in ssds.sync(submission_id, src, dst) if key]
-                    self.assertEqual(synced_keys, list())
+                self._assert_sync(src, dst, submission_id, uploaded_keys, synced_keys, dst_listed_keys)
+
+    def _assert_sync(self, src, dst, submission_id, expected_keys, synced_keys, dst_listed_keys, subdir=None):
+        self.assertEqual(sorted(expected_keys), sorted(synced_keys))
+        self.assertEqual(sorted(expected_keys), sorted(dst_listed_keys))
+        for ssds_key in dst_listed_keys:
+            a = src.blobstore.blob(f"{S3_SSDS.prefix}/{ssds_key}").get()
+            b = dst.blobstore.blob(f"{GS_SSDS.prefix}/{ssds_key}").get()
+            self.assertEqual(a, b)
+        with self.subTest("test no resync"):
+            synced_keys = [key for key in ssds.sync(submission_id, src, dst, subdir=subdir) if key]
+            self.assertEqual(synced_keys, list())
+
+    def test_sync_subdir(self):
+        src = S3_SSDS
+        dst = GS_SSDS
+        submission_id = f"{uuid4()}"
+        submission_name = "this_is_a_test_submission_for_sync"
+        uploaded_keys = [ssds_key for ssds_key in src.upload(self.testdir,
+                                                             submission_id,
+                                                             submission_name)]
+        expected_keys = [k for k in uploaded_keys if '/subdir1/' in k]
+        synced_keys = [key[len(f"{src.prefix}/"):] for key in ssds.sync(submission_id, src, dst, subdir='subdir1')]
+        dst_listed_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
+        self._assert_sync(src, dst, submission_id, expected_keys, synced_keys, dst_listed_keys, subdir='subdir1')
 
     def test_release(self):
         for src in (S3_SSDS, GS_SSDS):
