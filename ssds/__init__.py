@@ -65,7 +65,7 @@ class SSDS:
             break
         return name
 
-    def get_full_prefix(self, submission_id: str) -> str:
+    def get_submission_prefix(self, submission_id: str) -> str:
         try:
             blob = next(self.blobstore.list(f"{self.prefix}/{submission_id}"))
         except StopIteration:
@@ -150,7 +150,7 @@ def sync(submission_id: str,
          subdir: Optional[str] = None) -> Generator[str, None, None]:
     with storage.CopyClient() as cc:
         subdir = f"{subdir.strip('/')}" if subdir else ""
-        full_prefix = f'{src.get_full_prefix(submission_id)}/{subdir}'
+        full_prefix = f'{src.get_submission_prefix(submission_id)}/{subdir}'
         for src_blob in src.blobstore.list(full_prefix):
             dst_blob = dst.blobstore.blob(src_blob.key)
             if is_synced(src_blob, dst_blob):
