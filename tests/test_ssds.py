@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-import io
 import os
 import sys
 import time
 import json
 import logging
 import unittest
+import unittest.mock
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
@@ -15,7 +15,7 @@ sys.path.insert(0, pkg_root)  # noqa
 
 import ssds
 import ssds.blobstore
-from ssds.blobstore.s3 import S3BlobStore
+from ssds.blobstore.s3 import S3BlobStore, S3Blob
 from ssds.blobstore.gs import GSBlobStore
 from ssds.blobstore.local import LocalBlob, LocalBlobStore
 from ssds.deployment import _S3StagingTest, _GSStagingTest
@@ -179,20 +179,42 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
             with self.subTest(test_name):
                 submission_id = f"{uuid4()}"
                 submission_name = "this_is_a_test_submission_for_sync"
-                uploaded_keys = [ssds_key for ssds_key in src.upload(self.testdir,
+                uploaded_keys = set([ssds_key for ssds_key in src.upload(self.testdir,
                                                                      submission_id,
-                                                                     submission_name)]
+                                                                     submission_name)])
                 synced_keys = [key[len(f"{src.prefix}/"):] for key in ssds.sync(submission_id, src, dst)]
-                dst_listed_keys = [ssds_key for ssds_key in dst.list_submission(submission_id)]
-                self.assertEqual(sorted(uploaded_keys), sorted(synced_keys))
-                self.assertEqual(sorted(uploaded_keys), sorted(dst_listed_keys))
-                for ssds_key in dst_listed_keys:
-                    a = src.blobstore.blob(f"{S3_SSDS.prefix}/{ssds_key}").get()
-                    b = dst.blobstore.blob(f"{GS_SSDS.prefix}/{ssds_key}").get()
-                    self.assertEqual(a, b)
-                with self.subTest("test no resync"):
-                    synced_keys = [key for key in ssds.sync(submission_id, src, dst) if key]
-                    self.assertEqual(synced_keys, list())
+                self._assert_sync(src, dst, submission_id, uploaded_keys, synced_keys)
+
+    def _assert_sync(self, src, dst, submission_id, expected, synced, already_synced=None, subdir=None):
+        dst_listed_keys = {ssds_key for ssds_key in dst.list_submission(submission_id)
+                           if subdir is None or subdir.strip('/') in ssds_key}
+        self.assertEqual(sorted(expected), sorted(synced))
+        self.assertTrue(expected.issubset(dst_listed_keys))
+        self.assertTrue(dst_listed_keys.issubset(expected.union(already_synced or set())))
+        for ssds_key in dst_listed_keys:
+            a = src.blobstore.blob(f"{S3_SSDS.prefix}/{ssds_key}").get()
+            b = dst.blobstore.blob(f"{GS_SSDS.prefix}/{ssds_key}").get()
+            self.assertEqual(a, b)
+        with self.subTest("test no resync"):
+            synced = [key for key in ssds.sync(submission_id, src, dst, subdir=subdir) if key]
+            self.assertEqual(synced, list())
+
+    def test_sync_subdir(self):
+        src = S3_SSDS
+        dst = GS_SSDS
+        submission_id = f"{uuid4()}"
+        submission_name = "this_is_a_test_submission_for_sync"
+        uploaded_keys = [ssds_key for ssds_key in src.upload(self.testdir,
+                                                             submission_id,
+                                                             submission_name)]
+        already_synced = set()
+        for subdir in ['subdir1/subsubdir', '/subdir1/', 'subdir2']:
+            with self.subTest(subdir=subdir):
+                expected_keys = set([k for k in uploaded_keys if subdir.strip('/') in k]) - already_synced
+                synced_keys = [key[len(f"{src.prefix}/"):] for key in ssds.sync(submission_id, src, dst, subdir=subdir)]
+                already_synced.update(synced_keys)
+                self._assert_sync(src, dst, submission_id, expected_keys, synced_keys,
+                                  already_synced=already_synced, subdir=subdir)
 
     def test_release(self):
         for src in (S3_SSDS, GS_SSDS):
@@ -229,6 +251,20 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                             self.assertEqual(src_blob.get(), dst_blob.get())
                             self.assertIn(src_blob.key, sources)
                             self.assertIn(dst_blob.key, destinations)
+
+
+class NoFixturesTests(unittest.TestCase):
+
+    def test_get_full_prefix(self):
+        with unittest.mock.patch.object(S3_SSDS.blobstore, 'list') as mock_list:
+            mock_list.return_value.__next__.return_value = S3Blob(
+                bucket_name='org-hpp-ssds-staging-test-platform-dev',
+                key='submissions/dc4385e0-0553-4a8b-b000-9542b7d990c3--this_is_a_test_submission_for_sync/foo/bar/bert.dat'
+            )
+            full_prefix = S3_SSDS.get_submission_prefix('foo')
+        expected = 'submissions/dc4385e0-0553-4a8b-b000-9542b7d990c3--this_is_a_test_submission_for_sync'
+        self.assertEqual(expected, full_prefix)
+
 
 if __name__ == '__main__':
     unittest.main()
