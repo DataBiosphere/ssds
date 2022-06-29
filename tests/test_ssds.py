@@ -180,8 +180,8 @@ class TestSSDS(infra.SuppressWarningsMixin, unittest.TestCase):
                 submission_id = f"{uuid4()}"
                 submission_name = "this_is_a_test_submission_for_sync"
                 uploaded_keys = set([ssds_key for ssds_key in src.upload(self.testdir,
-                                                                     submission_id,
-                                                                     submission_name)])
+                                                                         submission_id,
+                                                                         submission_name)])
                 synced_keys = [key[len(f"{src.prefix}/"):] for key in ssds.sync(submission_id, src, dst)]
                 self._assert_sync(src, dst, submission_id, uploaded_keys, synced_keys)
 
@@ -258,8 +258,9 @@ class NoFixturesTests(unittest.TestCase):
     def test_get_full_prefix(self):
         with unittest.mock.patch.object(S3_SSDS.blobstore, 'list') as mock_list:
             mock_list.return_value.__next__.return_value = S3Blob(
-                bucket_name='org-hpp-ssds-staging-test-platform-dev',
-                key='submissions/dc4385e0-0553-4a8b-b000-9542b7d990c3--this_is_a_test_submission_for_sync/foo/bar/bert.dat'
+                bucket_name=_S3StagingTest.bucket,
+                key='submissions/dc4385e0-0553-4a8b-b000-9542b7d990c3--'
+                    'this_is_a_test_submission_for_sync/foo/bar/bert.dat'
             )
             full_prefix = S3_SSDS.get_submission_prefix('foo')
         expected = 'submissions/dc4385e0-0553-4a8b-b000-9542b7d990c3--this_is_a_test_submission_for_sync'

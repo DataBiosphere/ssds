@@ -78,6 +78,8 @@ mypy --install-types
 ```
 
 Many tests require access to test buckets listed in `ssds/deployment.py`.
+
+These buckets are in the `pangenomics` AWS account.
 Be sure to configure your S3 and GS credentials have access.
 
 ## Links
