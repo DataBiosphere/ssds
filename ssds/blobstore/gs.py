@@ -81,6 +81,8 @@ class GSBlob(Blob):
         self._get_native_blob().delete()
 
     def copy_from_is_multipart(self, src_blob: "GSBlob") -> bool:
+        # FIXME: Does gs even support multipart? Why would the user_project reflect that?
+        #        https://github.com/DataBiosphere/ssds/issues/221
         src_gs_blob = src_blob._get_native_blob()
         return src_gs_blob.bucket.user_project is not None
 

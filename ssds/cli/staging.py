@@ -75,7 +75,8 @@ def list_submission(args: argparse.Namespace):
 
 @staging_cli.command("sync", arguments={
     "--dst-deployment": dict(type=str, default="gcp", help="destination deployment"),
-    "--submission-id": dict(type=str, required=True, help="id of submission")
+    "--submission-id": dict(type=str, required=True, help="id of submission"),
+    "--subdir": dict(type=str, default=None, help="a specific subset of the submission to sync")
 })
 def sync_command(args: argparse.Namespace):
     """
@@ -83,7 +84,7 @@ def sync_command(args: argparse.Namespace):
     """
     src = Staging[args.deployment].ssds
     dst = Staging[args.dst_deployment].ssds
-    for _ in ssds.sync(args.submission_id, src, dst):
+    for _ in ssds.sync(args.submission_id, src, dst, args.subdir):
         pass
 
 @staging_cli.command("bucket")

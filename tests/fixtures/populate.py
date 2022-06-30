@@ -2,10 +2,8 @@
 import io
 import os
 import sys
-import tempfile
-import subprocess
 from functools import lru_cache
-from typing import List
+from typing import Tuple, Any
 
 import boto3
 from google.cloud.storage import Client
@@ -73,11 +71,11 @@ def _s3_bucket():
 def _gs_bucket():
     return Client().bucket("org-hpp-ssds-upload-test")
 
-def populate_fixtures(dirname: str, oneshot_data: bytes, multipart_data: bytes) -> str:
+def populate_fixtures(dirname: str, oneshot_data: bytes, multipart_data: bytes) -> Tuple[Any, str]:
     tree = _prepare_multifile_submission(dirname, oneshot_data, multipart_data)
     return tree, _remote_key(dirname)
 
 if __name__ == "__main__":
     oneshot_data = os.urandom(7)
     multipart_data = os.urandom(2 * AWS_MIN_CHUNK_SIZE + 1)
-    populate_fixtures(tempfile.TemporaryDirectory(oneshot_data, multipart_data))
+    # populate_fixtures(tempfile.TemporaryDirectory(oneshot_data, multipart_data))

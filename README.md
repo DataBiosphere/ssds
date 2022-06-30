@@ -66,6 +66,22 @@ environment variable `GOOGLE_PROJECT`, e.g.
 export GOOGLE_PROJECT="my-gcp-billing-project"
 ```
 
+# Developing
+
+Run tests with 
+```
+make test
+```
+If `mypy` linting fails, you may need to run
+```
+mypy --install-types
+```
+
+Many tests require access to test buckets listed in `ssds/deployment.py`.
+
+These buckets are in the `pangenomics` AWS account.
+Be sure to configure your S3 and GS credentials have access.
+
 ## Links
 Project home page [GitHub](https://github.com/DataBiosphere/ssds)  
 
